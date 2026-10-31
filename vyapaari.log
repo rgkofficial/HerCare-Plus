@@ -1,0 +1,3 @@
+2026-10-31 15:18:02.008 | INFO     | __main__:main:9 - Starting Vyapaari+ v1.0.0...
+2026-10-31 15:18:02.494 | INFO     | __main__:main:17 - Database schema initialized successfully.
+2026-10-31 15:18:02.495 | INFO     | __main__:main:30 - Headless startup requested; database is ready.
