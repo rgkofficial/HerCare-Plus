@@ -1,0 +1,8 @@
+{
+  "seed": 20261026,
+  "test_size": 0.2,
+  "cv_folds": 5,
+  "data": "ml/data/maternal-health-risk.csv",
+  "artifact": "ml/artifacts/maternal-risk-v1.json",
+  "evaluation": "ml/artifacts/maternal-risk-v1-evaluation.json"
+}
