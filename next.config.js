@@ -7,10 +7,11 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig = {
-  // Do not fail the production build on lint issues (the lint setup in this
-  // repo targets a newer ESLint than the one pinned in package.json).
-  eslint: {
-    ignoreDuringBuilds: true,
+  // The ML model artifact is read from disk at runtime via a path built from
+  // process.cwd(), so Next.js cannot trace it automatically. Ship it with the
+  // serverless function that needs it.
+  outputFileTracingIncludes: {
+    '/api/health-risk': ['./ml/artifacts/**'],
   },
 };
 
