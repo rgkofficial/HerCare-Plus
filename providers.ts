@@ -1,0 +1,19 @@
+import type { ProviderProfile } from "./types";
+
+export const PROVIDERS: ProviderProfile[] = [
+  { id: "provider-anjali", name: "Dr. Anjali Bajoria", credentials: "MBBS, MD (Obstetrics & Gynecology)", specialty: "Gynecology & fertility", clinicName: "Srishti & Drishti Clinic", city: "Jamshedpur", languages: ["English", "Hindi"], consultationFee: 500, rating: 4.8, reviewCount: 104, bio: "Patient-centred consultations for menstrual health, PCOS, fertility questions, and routine gynecology.", telehealth: true, womenFriendly: true, photoInitials: "AB", timezone: "Asia/Kolkata", availability: [{ day: 1, start: "10:00", end: "13:00" }, { day: 3, start: "17:00", end: "19:00" }, { day: 5, start: "10:00", end: "13:00" }] },
+  { id: "provider-veena", name: "Dr. Veena Singh", credentials: "MBBS, DGO", specialty: "Pregnancy & high-risk care", clinicName: "Nu Life Nursing Home", city: "Jamshedpur", languages: ["English", "Hindi", "Bengali"], consultationFee: 500, rating: 4.6, reviewCount: 188, bio: "Support for pregnancy planning, antenatal questions, and referrals when in-person assessment is needed.", telehealth: true, womenFriendly: true, photoInitials: "VS", timezone: "Asia/Kolkata", availability: [{ day: 2, start: "09:00", end: "11:00" }, { day: 4, start: "17:00", end: "19:00" }, { day: 6, start: "09:00", end: "11:00" }] },
+  { id: "provider-emrana", name: "Dr. Emrana Rehman", credentials: "MBBS, MS (OBG)", specialty: "General gynecology", clinicName: "Rahman Clinic", city: "Bhagalpur", languages: ["English", "Hindi", "Urdu"], consultationFee: 300, rating: 4.7, reviewCount: 591, bio: "Respectful consultations for common gynecological concerns and pregnancy care.", telehealth: false, womenFriendly: true, photoInitials: "ER", timezone: "Asia/Kolkata", availability: [{ day: 1, start: "14:00", end: "17:00" }, { day: 4, start: "14:00", end: "17:00" }] },
+  { id: "provider-pinky", name: "Dr. Pinky Roy", credentials: "MBBS, DNB (OBG)", specialty: "Menopause & reproductive health", clinicName: "Bindal Mall Clinic", city: "Jamshedpur", languages: ["English", "Hindi"], consultationFee: 700, rating: 4.7, reviewCount: 85, bio: "Evidence-informed support for menopause, contraception, infertility, and long-term women’s health.", telehealth: true, womenFriendly: true, photoInitials: "PR", timezone: "Asia/Kolkata", availability: [{ day: 2, start: "10:00", end: "14:00" }, { day: 6, start: "10:00", end: "14:00" }] },
+  { id: "provider-sameer", name: "Dr. Sameer Khan", credentials: "MBBS, MD (Internal Medicine)", specialty: "Primary care", clinicName: "Medaz Hospital", city: "Bhagalpur", languages: ["English", "Hindi"], consultationFee: 500, rating: 4.6, reviewCount: 1185, bio: "First-contact care, health concerns needing referral, and follow-up planning.", telehealth: true, womenFriendly: true, photoInitials: "SK", timezone: "Asia/Kolkata", availability: [{ day: 1, start: "10:00", end: "13:00" }, { day: 3, start: "10:00", end: "13:00" }, { day: 5, start: "10:00", end: "13:00" }] },
+];
+
+export function searchProviders(query = "", filters: { city?: string; specialty?: string; telehealth?: boolean; language?: string } = {}): ProviderProfile[] {
+  const normalized = query.trim().toLowerCase();
+  return PROVIDERS.filter((provider) => {
+    const haystack = `${provider.name} ${provider.specialty} ${provider.clinicName} ${provider.city}`.toLowerCase();
+    return (!normalized || haystack.includes(normalized)) && (!filters.city || provider.city === filters.city) && (!filters.specialty || provider.specialty === filters.specialty) && (filters.telehealth === undefined || provider.telehealth === filters.telehealth) && (!filters.language || provider.languages.includes(filters.language));
+  });
+}
+
+export function providerById(id: string): ProviderProfile | undefined { return PROVIDERS.find((provider) => provider.id === id); }

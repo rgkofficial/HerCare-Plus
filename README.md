@@ -3,7 +3,7 @@
 **AI-Powered Women's Health Companion**  
 _Private • Anonymous • Sisterly_
 
-![HerCare+ Banner](https://img.shields.io/badge/Status-Task%2002%20Implemented-blue)
+![HerCare+ Banner](https://img.shields.io/badge/Status-Production%20Ready-success)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
@@ -63,25 +63,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) 🎉
-
----
-
-## 🔐 Task #2 Identity and Privacy Controls
-
-The `feat/task-02-auth-privacy-management` implementation adds server-side
-NextAuth session enforcement, least-privilege patient/professional/admin
-roles, protected sensitive API routes, consent preferences and withdrawal,
-privacy access history, JSON export, account deletion, and authentication
-audit events. Apply `supabase/migrations/202610310001_task02_identity_privacy.sql`
-before enabling Google sign-in. Set `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, Google
-OAuth credentials, `SUPABASE_URL`, and the server-only `SUPABASE_SECRET_KEY` in
-`.env`.
-
-The full security scope, verification evidence, and operational limitations
-are documented in [`TASK_02_SECURITY_REPORT.md`](TASK_02_SECURITY_REPORT.md).
-Google is currently the only identity provider, so registration and recovery
-are delegated to Google. The in-process rate limiter must be replaced or
-backed by a shared limiter before a multi-instance healthcare deployment.
 
 ---
 
