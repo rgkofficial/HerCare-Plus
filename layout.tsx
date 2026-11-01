@@ -12,6 +12,7 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXTAUTH_URL || "https://hercare.vercel.app"),
   title: "HerCare+ | Private Women's Health Companion",
   description: "Anonymous, AI-powered women's health platform. Check symptoms, track cycles, find care - all private and secure. Available in 6 Indian languages.",
   keywords: ["women's health", "gynecology", "menstrual tracking", "private health", "AI health", "India women health"],
