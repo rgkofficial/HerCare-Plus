@@ -1,34 +1,30 @@
 # Medical Records Vault API
 
-The vault stores sensitive documents in the private `medical-records` Supabase bucket. Every owner-scoped route derives the owner from the NextAuth session; client-supplied owner IDs are never trusted. The Supabase service-role key is server-only.
+Task #7 provides an authenticated, owner-scoped lifecycle for prescriptions, lab reports, and medical documents. The Supabase `medical-records` bucket must be private; the browser never receives a service key or a permanent storage URL.
 
 ## Security contract
 
-Uploads accept PDF, JPEG, and PNG only, have a 10 MiB limit, and must match their file signature. Filenames are sanitized and UUID storage paths are generated server-side. A pre-storage quarantine gate rejects the EICAR antivirus test string and executable signatures. This gate is intentionally conservative and is not a substitute for a production AV provider; deployments should keep an asynchronous provider in front of any document that is not `scan_status=clean`.
+Every route derives `owner_id` from the NextAuth session. User-supplied owner IDs are ignored. File uploads accept only PDF, JPEG, and PNG files up to 10 MB, validate magic bytes, sanitize display names, and perform a baseline EICAR/known-signature quarantine check before storage. Deployments should run a ClamAV-compatible worker and update `scan_status` for defense in depth; records not marked `clean` are excluded from listings and sharing.
 
-Signed storage URLs expire after 60 seconds. Preview uses the same short-lived URL as download. The UI must not cache, log, or persist signed URLs.
+Preview and download both use the same owner check and a Supabase signed URL that expires after 60 seconds. A signed URL is a temporary credential and must not be logged or persisted by clients. Storage/database partial failures are returned as explicit errors and uploads are best-effort cleaned up when metadata insertion fails.
 
 ## Endpoints
 
-- `GET /api/medical-records` lists at most 100 records owned by the current user.
-- `POST /api/medical-records` accepts multipart `file` and optional `category` (`prescription`, `lab_report`, `medical_report`, `other`).
-- `GET /api/medical-records/download?id=...` checks ownership before issuing a 60-second URL.
-- `DELETE /api/medical-records/delete` accepts JSON `{ "id": "..." }`, checks ownership, removes storage, then removes metadata. A database failure after storage removal is returned explicitly.
-- `GET /api/medical-records/versions?id=...` returns an owner-scoped version chain.
-- `POST /api/medical-records/versions` uploads a version only from the latest owner-scoped version.
-- `GET /api/medical-records/export` returns an owner-scoped metadata manifest with 60-second URLs. It does not expose storage paths.
-- `POST /api/medical-records/share` accepts `{ recordId, recipientLabel?, expiresInHours? }`. The maximum consent duration is 72 hours. The raw token is returned once; only its SHA-256 hash is stored.
-- `DELETE /api/medical-records/share` accepts `{ id }` and revokes an active share for the owner.
-- `GET /api/medical-records/shared/{token}` validates expiry/revocation and issues a 60-second read-only URL. It exposes metadata only after the document is scan-cleared.
-- `POST /api/medical-records/ocr-review` accepts `{ recordId, ocrText }`, stores reviewed extraction text for the owner, and marks `review_required=false`.
-- `POST /api/medical-records/retention` is scheduler-only and requires the `x-retention-job-secret` header matching `RETENTION_JOB_SECRET`. It removes expired storage objects first, tombstones metadata with `deleted_at`, and reports candidates that need reconciliation.
+- `GET /api/medical-records` — list up to 100 clean records for the signed-in owner.
+- `POST /api/medical-records` — multipart upload with `file` and optional `category` (`prescription`, `lab_report`, `medical_report`, `other`).
+- `GET /api/medical-records/download?id=...` — create a 60-second owner-scoped access link.
+- `DELETE /api/medical-records/delete` — JSON `{ "id": "..." }`; deletes only the owner’s latest version and preserves version-chain integrity.
+- `POST /api/medical-records/versions` and `GET /api/medical-records/versions?id=...` — append and inspect owner-scoped version chains.
+- `POST /api/medical-records/share` — JSON `{ recordId, recipientLabel, expiresInHours }`; requires explicit owner consent and returns a hashed-token-backed link credential valid for 1–72 hours.
+- `GET /api/medical-records/share?token=...` — validates the hashed token, expiry, revocation, ownership relation, and clean scan status, then returns a 60-second signed URL.
+- `GET /api/medical-records/export` — returns an owner-scoped JSON manifest with short-lived links; it never includes storage paths.
 
-## Lifecycle and privacy
+## OCR and review
 
-New records receive a seven-year `retention_until` default and `ocr_status=pending_review`. Extraction is not considered trusted until the owner submits the review endpoint. The schema includes `deleted_at` for soft-delete/retention workers; a deployment job should remove expired storage objects and then metadata, recording `retention_delete` audit events.
+The schema has `ocr_status`, `ocr_text`, `extracted_data`, and `reviewed_at` fields so an asynchronous OCR worker can write a proposed extraction as `needs_review`. The application must not treat OCR output as clinical truth until a human reviewer changes it to `reviewed`. OCR is intentionally separated from upload so an OCR outage cannot block secure document storage.
 
-Audit events cover upload, download, delete, share creation/revocation, export, retention deletion, and OCR review. Do not describe the audit table as cryptographically immutable: production must deny UPDATE/DELETE through database policies and restrict inserts to the service role. The migration expands the action constraint but does not create the storage bucket, AV provider, OCR provider, or production RLS policies automatically.
+## Audit and retention
 
-## Verification
+Upload, download, delete, share, and shared-link access events are written to `medical_record_audit_logs`. The hardening migration adds event metadata/hash columns and revokes update/delete for application roles; production should complete the hash-chain trigger using the deployment’s database role. Default retention is seven years and `retention_until` is indexed for a scheduled purge worker. Sharing is revocable by setting `revoked_at`; the bearer token is stored only as a SHA-256 hash.
 
-Run `npm test`, `npm run lint`, and `npm run build`. Tests cover unauthenticated access, cross-account download denial, MIME/signature/size validation, storage cleanup after metadata failure, quarantine signatures, and safe filename handling.
+Apply migrations in order, create the private bucket, configure NextAuth and Supabase secrets, and run `npm test`, `npm run lint`, and `npm run build` before deployment. Known limitation: the repository includes a safe baseline scanner and scanner integration point, not a bundled antivirus daemon or medical-grade OCR model.

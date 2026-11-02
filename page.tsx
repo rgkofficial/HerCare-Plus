@@ -1,492 +1,677 @@
 "use client";
 
-import BottomNav from "@/components/BottomNav";
-import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { Mic, Send, X, Heart, Loader2, Stethoscope } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
+import { useEffect, useState, useRef } from "react";
 
-type Language = "en" | "hi" | "ta" | "te" | "bn" | "mr";
-
-const LANGUAGES: Record<
-  Language,
-  { name: string; label: string; greeting: string }
-> = {
-  en: {
-    name: "English",
-    label: "English",
-    greeting: "How are you feeling today?",
-  },
-  hi: {
-    name: "Hindi",
-    label: "हिंदी",
-    greeting: "आज आप कैसा महसूस कर रही हैं?",
-  },
-  ta: { name: "Tamil", label: "தமிழ்", greeting: "என்ன பிரச்சனை?" },
-  te: { name: "Telugu", label: "తెలుగు", greeting: "ఏమి సమస్య?" },
-  bn: { name: "Bengali", label: "বাংলা", greeting: "কী समस्या?" },
-  mr: { name: "Marathi", label: "मराठी", greeting: "काय त्रास आहे?" },
-};
-
-const WARM_INITIAL_MESSAGES = [
-  "You're safe here. Share only what you're comfortable with.",
-  "I'm here with you. No judgment. No rush.",
-  "This is your space. Take all the time you need.",
-];
-
-const SYMPTOM_SUGGESTIONS_YOUNG = [
-  "💭 First period questions",
-  "💭 Period pain",
-  "💭 Changing body",
-];
-
-const SYMPTOM_SUGGESTIONS_ADULT = [
-  "💭 Irregular periods",
-  "💭 Pain or cramps",
-  "💭 Pregnancy questions",
-];
-
-const SYMPTOM_SUGGESTIONS_MATURE = [
-  "💭 Menopause symptoms",
-  "💭 Heavy bleeding",
-  "💭 Bone health",
-];
-
-type AnalysisResult = {
-  conversation: string;
-  show_doctor_choice: boolean;
-  reasoning?: any;
-};
-
-type Message = {
+type MedicalRecord = {
   id: string;
-  sender: "user" | "ai";
-  text?: string;
-  analysis?: AnalysisResult;
+  file_name: string;
+  category: string;
+  content_type: string;
+  file_size: number;
+  created_at: string;
+  version_number?: number;
+  previous_version_id?: string | null;
 };
 
-export default function SymptomChecker() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputText, setInputText] = useState("");
-  const [selectedLang, setSelectedLang] = useState<Language>("en");
-  const [loading, setLoading] = useState(false);
-  const [nickname, setNickname] = useState("friend");
-  const [age, setAge] = useState<string>("25");
-  const [showSuggestions, setShowSuggestions] = useState(true);
-  const [isFindingDoctor, setIsFindingDoctor] = useState(false);
+const categories = [
+  { value: "prescription", label: "Prescription" },
+  { value: "lab_report", label: "Lab Report" },
+  { value: "medical_report", label: "Medical Report" },
+  { value: "other", label: "Other" },
+];
 
-  const {
-    isListening,
-    transcript,
-    startListening,
-    stopListening,
-    setTranscript,
-  } = useVoiceInput();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+export default function MedicalRecordsPage() {
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [category, setCategory] = useState("other");
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [versionTarget, setVersionTarget] =
+  useState<MedicalRecord | null>(null);
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [versionUploading, setVersionUploading] = useState(false);
+  const [historyTarget, setHistoryTarget] =
+  useState<MedicalRecord | null>(null);
+  const [history, setHistory] = useState<MedicalRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  useEffect(() => {
-    const savedName = localStorage.getItem("hercare_nickname");
-    const savedAge = localStorage.getItem("hercare_age");
-    if (savedName) setNickname(savedName);
-    if (savedAge) setAge(savedAge);
-
-    // Initial message personalization
-    const ageNum = savedAge ? parseInt(savedAge) : 25;
-    let welcomeText =
-      WARM_INITIAL_MESSAGES[
-        Math.floor(Math.random() * WARM_INITIAL_MESSAGES.length)
-      ];
-
-    if (ageNum < 18) {
-      welcomeText = `Hey ${savedName || "friend"} 🌸, you're safe here. I can help you understand what's happening with your body. What's on your mind?`;
-    } else if (ageNum > 45) {
-      welcomeText = `Hello ${savedName || "there"} 🌸. Health at every stage is important. How can I support your wellbeing today?`;
-    } else {
-      welcomeText = `Hi ${savedName || "friend"} 💜. This is your private space. Tell me what's been on your mind lately?`;
-    }
-
-    setMessages([
-      {
-        id: "1",
-        sender: "ai",
-        text: welcomeText,
-      },
-    ]);
-  }, []);
-
-  const getSuggestions = () => {
-    const ageNum = parseInt(age);
-    if (ageNum < 18) return SYMPTOM_SUGGESTIONS_YOUNG;
-    if (ageNum > 45) return SYMPTOM_SUGGESTIONS_MATURE;
-    return SYMPTOM_SUGGESTIONS_ADULT;
-  };
-
-  useEffect(() => {
-    if (transcript) {
-      setInputText((prev) => (prev ? prev + " " + transcript : transcript));
-      setTranscript("");
-    }
-  }, [transcript, setTranscript]);
-
-  // Manual scroll helper
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
-    }, 100);
-  };
-
-  const isInitialLoad = useRef(true);
-
-  // Only scroll automatically for the very first welcome message
-  useEffect(() => {
-    if (isInitialLoad.current && messages.length > 0) {
-      scrollToBottom();
-      isInitialLoad.current = false;
-    }
-  }, [messages.length]);
-
-  const handleSend = async (text?: string) => {
-    const messageToSend = typeof text === "string" ? text : inputText;
-    if (!messageToSend.trim()) return;
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      sender: "user",
-      text: messageToSend,
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputText("");
+  async function loadRecords() {
     setLoading(true);
-    setShowSuggestions(false);
-
-    // Scroll to bottom when user sends
-    scrollToBottom();
+    setError("");
 
     try {
-      const response = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          age: age,
-          symptoms: userMsg.text,
-          language: LANGUAGES[selectedLang].name,
-          nickname,
-        }),
+      const response = await fetch("/api/medical-records", {
+        cache: "no-store",
       });
+      const result = await response.json();
 
-      if (!response.ok) throw new Error("AI Failed");
+      if (!response.ok) {
+        throw new Error(result.error || "Could not load documents.");
+      }
 
-      const data: AnalysisResult = await response.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "ai",
-          analysis: data,
-        },
-      ]);
-
-      // Scroll to bottom when AI responds
-      scrollToBottom();
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "ai",
-          text: "I am having trouble connecting right now. But you are not alone - please try again in a moment, or reach out to a trusted doctor.",
-        },
-      ]);
-      // Scroll to bottom on error message too
-      scrollToBottom();
+      setRecords(result.records || []);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not load documents."
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    void loadRecords();
+  }, []);
+
+  async function uploadDocument(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+
+    if (!file) {
+      setError("Please select a document first.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+
+      const response = await fetch("/api/medical-records", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Upload failed.");
+      }
+
+      setFile(null);
+      if (formRef.current) {
+       formRef.current.reset();
+      }
+      setCategory("other");
+      setMessage("Document uploaded successfully.");
+      await loadRecords();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function downloadDocument(record: MedicalRecord) {
+    setBusyId(record.id);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/medical-records/download?id=${encodeURIComponent(record.id)}`
+      );
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Download failed.");
+      }
+
+      const link = document.createElement("a");
+      link.href = result.downloadUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = record.file_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function previewDocument(record: MedicalRecord) {
+  setBusyId(record.id);
+  setError("");
+  setMessage("");
+
+  // Open a tab immediately to reduce popup-blocker issues.
+  const previewWindow = window.open("about:blank", "_blank");
+
+  if (!previewWindow) {
+    setError("Please allow pop-ups to preview this document.");
+    setBusyId(null);
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/medical-records/download?id=${encodeURIComponent(record.id)}`
+    );
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Preview failed.");
+    }
+
+    previewWindow.opener = null;
+    previewWindow.location.href = result.downloadUrl;
+  } catch (err) {
+    previewWindow.close();
+    setError(err instanceof Error ? err.message : "Preview failed.");
+  } finally {
+    setBusyId(null);
+  }
+}
+
+  async function deleteDocument(record: MedicalRecord) {
+    const confirmed = window.confirm(
+      `Delete "${record.file_name}" permanently?`
+    );
+
+    if (!confirmed) return;
+
+    setBusyId(record.id);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/medical-records/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: record.id }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Delete failed.");
+      }
+
+      setRecords((current) =>
+        current.filter((item) => item.id !== record.id)
+      );
+      setMessage("Document deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+   async function uploadNewVersion(
+  event: React.FormEvent<HTMLFormElement>
+) {
+  event.preventDefault();
+
+  if (!versionTarget || !versionFile) {
+    setError("Select a document before uploading a new version.");
+    return;
+  }
+
+  if (versionFile.size > 10 * 1024 * 1024) {
+    setError("The file must be 10 MB or smaller.");
+    return;
+  }
+
+  setVersionUploading(true);
+  setError("");
+  setMessage("");
+
+  try {
+    const formData = new FormData();
+    formData.append("file", versionFile);
+    formData.append("id", versionTarget.id);
+    formData.append("category", versionTarget.category || "other");
+
+    const response = await fetch("/api/medical-records/versions", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not upload the new version."
+      );
+    }
+
+    setMessage("New document version uploaded successfully.");
+    setVersionTarget(null);
+    setVersionFile(null);
+    await loadRecords();
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Could not upload the new version."
+    );
+  } finally {
+    setVersionUploading(false);
+  }
+}
+
+async function viewVersionHistory(record: MedicalRecord) {
+  setHistoryTarget(record);
+  setHistory([]);
+  setHistoryLoading(true);
+  setError("");
+  setMessage("");
+
+  try {
+    const response = await fetch(
+      `/api/medical-records/versions?id=${encodeURIComponent(record.id)}`,
+      { cache: "no-store" }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not load version history."
+      );
+    }
+
+    const versions = Array.isArray(result)
+      ? result
+      : result.versions ?? result.records;
+
+    if (!Array.isArray(versions)) {
+      throw new Error("Unexpected version-history response.");
+    }
+
+    setHistory(versions);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Could not load version history."
+    );
+  } finally {
+    setHistoryLoading(false);
+  }
+}
+
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  const filteredRecords = records.filter((record) => {
+  const matchesSearch = record.file_name
+    .toLowerCase()
+    .includes(searchTerm.toLowerCase());
+
+  const matchesCategory =
+    filterCategory === "all" || record.category === filterCategory;
+
+  return matchesSearch && matchesCategory;
+});
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#FFF5F7] relative overflow-hidden font-nunito">
-      {/* Optimized Background - Lightweight CSS Gradients */}
-      <div className="absolute top-0 right-0 w-full h-[500px] bg-gradient-to-b from-pink-100/40 to-transparent pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-full h-[300px] bg-gradient-to-t from-purple-100/40 to-transparent pointer-events-none" />
+    <main
+      style={{
+        maxWidth: 900,
+        margin: "40px auto",
+        padding: 24,
+        fontFamily: "Arial, sans-serif",
+        color: "#243047",
+      }}
+    >
+      <header style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Medical Records Vault</h1>
+        <p style={{ color: "#596579", lineHeight: 1.6 }}>
+          Store and manage your prescriptions, laboratory reports, and medical
+          documents in one place.
+        </p>
+      </header>
 
-      {/* Header - Optimized Glassmorphism */}
-      <div className="pt-12 pb-4 px-6 bg-white/90 backdrop-blur-md border-b border-gray-100 flex justify-between items-center z-10 sticky top-0 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-black text-gray-800 tracking-tight flex items-center gap-2">
-            HerCare
-            <span className="text-pink-500 text-3xl leading-none">⁺</span>
-          </h1>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-             Women&apos;s Health Support
-            </p>
-          </div>
-        </div>
+      <section
+        style={{
+          border: "1px solid #dce3ec",
+          borderRadius: 12,
+          padding: 22,
+          marginBottom: 28,
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>Upload a document</h2>
+        <p style={{ color: "#596579", fontSize: 14 }}>
+          PDF, JPEG, or PNG · Maximum 10 MB
+        </p>
 
-        {/* Enhanced Language Selector */}
-        <div className="relative group">
-          <select
-            value={selectedLang}
-            onChange={(e) => setSelectedLang(e.target.value as Language)}
-            className="bg-white/80 backdrop-blur-md border border-gray-200 text-gray-700 text-xs font-bold rounded-2xl pl-4 pr-8 py-2.5 outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-all appearance-none cursor-pointer hover:bg-white shadow-sm hover:shadow-md"
+       <form ref={formRef} onSubmit={uploadDocument}>
+          <label
+            htmlFor="medical-file"
+            style={{ display: "block", marginBottom: 8 }}
           >
-            {Object.entries(LANGUAGES).map(([code, lang]) => (
-              <option key={code} value={code} className="text-base py-1">
-                {lang.label}
+            Choose file
+          </label>
+          <input
+            id="medical-file"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            onChange={(event) =>
+              setFile(event.target.files?.[0] || null)
+            }
+            required
+            style={{ display: "block", marginBottom: 18, maxWidth: "100%" }}
+          />
+
+          <label
+            htmlFor="medical-category"
+            style={{ display: "block", marginBottom: 8 }}
+          >
+            Document category
+          </label>
+          <select
+            id="medical-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            style={{
+              padding: 10,
+              width: "100%",
+              maxWidth: 360,
+              marginBottom: 18,
+            }}
+          >
+            {categories.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
               </option>
             ))}
           </select>
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-pink-500 transition-colors">
-            <svg
-              width="10"
-              height="6"
-              viewBox="0 0 10 6"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M1 1L5 5L9 1"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <div>
+            <button type="submit" disabled={uploading} style={buttonStyle}>
+              {uploading ? "Uploading..." : "Upload document"}
+            </button>
           </div>
-        </div>
-      </div>
+        </form>
+      </section>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 pb-8 space-y-6">
-        <AnimatePresence>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
-            >
-              {msg.text ? (
-                <div
-                  className={`max-w-[85%] p-5 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
-                    msg.sender === "user"
-                      ? "bg-gradient-to-br from-pink-500 to-rose-500 text-white rounded-br-none shadow-pink-200"
-                      : "bg-white text-gray-600 border border-gray-100 rounded-bl-none shadow-gray-100"
-                  }`}
-                >
-                  {msg.text}
-                </div>
-              ) : msg.analysis ? (
-                <div className="max-w-[95%] w-full bg-white rounded-[2rem] rounded-bl-none border border-white shadow-xl shadow-purple-900/5 overflow-hidden">
-                  <div className="p-6">
-                    <p className="text-gray-600 text-sm leading-7 font-medium">
-                      <Heart
-                        size={16}
-                        className="inline mr-2 text-pink-500 mb-0.5"
-                        fill="currentColor"
-                      />
-                      {msg.analysis.conversation}
-                    </p>
+      {message && (
+        <p role="status" style={{ color: "#167044" }}>
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" style={{ color: "#b42318" }}>
+          {error}
+        </p>
+      )}
 
-                    {msg.analysis.show_doctor_choice && (
-                      <div className="mt-6 pt-4 border-t border-gray-50 animate-fade-in">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-center text-gray-400 mb-4">
-                          Recommended Next Step
-                        </p>
-                        <div className="flex gap-3 justify-center">
-                          <button
-                            onClick={() => setIsFindingDoctor(true)}
-                            className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wide shadow-lg shadow-pink-200 hover:shadow-xl hover:scale-105 transition-all"
-                          >
-                            Find a Doctor
-                          </button>
-                          <button className="bg-gray-50 text-gray-500 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wide hover:bg-gray-100 transition-all">
-                            Maybe Later
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-gray-100 p-4 rounded-3xl rounded-bl-none flex items-center gap-3 shadow-sm">
-              <Loader2 className="animate-spin text-pink-400" size={20} />
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                HerCare is thinking...
-              </span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} className="h-56 shrink-0" />
-      </div>
-
-      <AnimatePresence>
-        {showSuggestions && messages.length === 1 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="px-4 pb-2 flex flex-wrap gap-2 justify-center"
+      <section>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <h2>Your documents</h2>
+          <button
+            type="button"
+            onClick={() => void loadRecords()}
+            disabled={loading}
+            style={buttonStyle}
           >
-            {getSuggestions().map((suggestion, i) => (
-              <button
-                key={i}
-                onClick={() => handleSend(suggestion.replace("💭 ", ""))}
-                className="bg-white border border-gray-50 text-gray-600 px-5 py-3 rounded-2xl text-xs font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all flex items-center gap-2"
-              >
-                <Stethoscope size={16} className="text-pink-500" />
-                {suggestion.replace("💭 ", "")}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isFindingDoctor && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsFindingDoctor(false)}
-              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl p-6 shadow-2xl max-w-md mx-auto"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-gray-800">
-                  Find a doctor perfect for you
-                </h3>
-                <button
-                  onClick={() => setIsFindingDoctor(false)}
-                  className="p-2 bg-gray-50 rounded-full"
-                >
-                  <X size={20} className="text-gray-500" />
-                </button>
-              </div>
-
-              <p className="text-sm text-gray-600 mb-4">Are you looking for:</p>
-
-              <div className="space-y-3">
-                <Link href="/care?filter=women" className="block">
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-pink-50 border border-pink-100 hover:bg-pink-100 transition-colors">
-                    <div className="w-10 h-10 rounded-full bg-pink-200 flex items-center justify-center text-xl">
-                      👩‍⚕️
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-pink-900">
-                        Women&apos;s Health Specialist
-                      </h4>
-                      <p className="text-xs text-pink-700">
-                        Gynecologists & OB-GYNs
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-
-                <Link href="/care?filter=general" className="block">
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-purple-50 border border-purple-100 hover:bg-purple-100 transition-colors">
-                    <div className="w-10 h-10 rounded-full bg-purple-200 flex items-center justify-center text-xl">
-                      🩺
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-purple-900">
-                        General Doctor
-                      </h4>
-                      <p className="text-xs text-purple-700">
-                        For fever, flu, general checkups
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-
-                <Link href="/care?filter=free" className="block">
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-green-50 border border-green-100 hover:bg-green-100 transition-colors">
-                    <div className="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center text-xl">
-                      🏥
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-green-900">
-                        Free / Low-Cost Clinic
-                      </h4>
-                      <p className="text-xs text-green-700">
-                        NGOs and government hospitals
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Floating Input Pill - Fixed above Nav */}
-      <div className="fixed bottom-[5.5rem] left-0 right-0 px-4 z-30 pointer-events-none">
-        <div className="max-w-md mx-auto pointer-events-auto">
-          <div className="bg-white/90 backdrop-blur-xl p-1.5 pl-2 rounded-[2.5rem] shadow-2xl shadow-purple-900/10 border border-white/60 flex items-center transition-all focus-within:shadow-pink-300/40 focus-within:scale-[1.01] focus-within:bg-white">
-            <div className="w-10 h-10 bg-pink-50 rounded-full flex items-center justify-center text-xl shrink-0 animate-bounce-slow">
-              🌸
-            </div>
-            <input
-              type="text"
-              className="flex-1 bg-transparent border-none outline-none px-3 py-3 text-gray-700 placeholder-gray-400 font-bold text-sm"
-              placeholder={
-                isListening ? "Listening..." : "Tell me how you feel..."
-              }
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            />
-
-            <button
-              onClick={isListening ? stopListening : startListening}
-              className={`p-3 rounded-2xl transition-all ${
-                isListening
-                  ? "bg-red-50 text-red-500 animate-pulse"
-                  : "bg-gray-50 text-gray-400 hover:bg-gray-100"
-              }`}
-            >
-              {isListening ? <X size={20} /> : <Mic size={20} />}
-            </button>
-
-            <button
-              onClick={() => handleSend()}
-              disabled={!inputText.trim()}
-              className="p-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-2xl shadow-lg shadow-pink-200 hover:shadow-xl hover:scale-105 disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none disabled:scale-100 transition-all"
-            >
-              <Send size={20} />
-            </button>
-          </div>
-          <div className="flex justify-center mt-3 px-2 text-center">
-            <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-              Health support • AI-generated guidance
-            </span>
-          </div>
+            Refresh
+          </button>
         </div>
-      </div>
 
-      <BottomNav />
-    </div>
+        <div
+  style={{
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 18,
+  }}
+>
+  <input
+    type="text"
+    value={searchTerm}
+    onChange={(event) => setSearchTerm(event.target.value)}
+    placeholder="Search by filename..."
+    aria-label="Search medical documents"
+    style={{
+      flex: "1 1 220px",
+      padding: 12,
+      border: "1px solid #dce3ec",
+      borderRadius: 8,
+    }}
+  />
+
+  <select
+    value={filterCategory}
+    onChange={(event) => setFilterCategory(event.target.value)}
+    aria-label="Filter by category"
+    style={{
+      flex: "0 1 200px",
+      padding: 12,
+      border: "1px solid #dce3ec",
+      borderRadius: 8,
+    }}
+  >
+    <option value="all">All categories</option>
+    {categories.map((item) => (
+      <option key={item.value} value={item.value}>
+        {item.label}
+      </option>
+    ))}
+  </select>
+</div>
+
+        {loading ? (
+          <p>Loading documents...</p>
+        ) : records.length === 0 ? (
+          <p style={{ color: "#596579" }}>
+            No documents yet. Upload a test document to get started.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 14 }}>
+            {filteredRecords.map((record) => (
+              <article
+                key={record.id}
+                style={{
+                  border: "1px solid #dce3ec",
+                  borderRadius: 12,
+                  padding: 18,
+                }}
+              >
+                <h3 style={{ marginTop: 0, overflowWrap: "anywhere" }}>
+                  {record.file_name}
+                </h3>
+                <p style={{ color: "#596579", fontSize: 14 }}>
+                  {categories.find((item) => item.value === record.category)
+                    ?.label || "Other"}{" "}
+                  · {formatSize(Number(record.file_size))} ·{" "}
+                  {new Date(record.created_at).toLocaleDateString()}
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+  <button
+    type="button"
+    onClick={() => void previewDocument(record)}
+    disabled={busyId === record.id}
+    style={buttonStyle}
+  >
+    {busyId === record.id ? "Please wait..." : "Preview"}
+  </button>
+
+  <button
+    type="button"
+    onClick={() => void downloadDocument(record)}
+    disabled={busyId === record.id}
+    style={buttonStyle}
+  >
+    {busyId === record.id ? "Please wait..." : "Download"}
+  </button>
+
+  <button
+    type="button"
+    onClick={() => void deleteDocument(record)}
+    disabled={busyId === record.id}
+    style={{
+      ...buttonStyle,
+      background: "#fff",
+      color: "#b42318",
+      border: "1px solid #d9a5a5",
+    }}
+  >
+    Delete
+  </button>
+   <button
+  type="button"
+  onClick={() => {
+    setVersionTarget(record);
+    setVersionFile(null);
+    setError("");
+    setMessage("");
+  }}
+  style={buttonStyle}
+>
+  Upload New Version
+</button>
+
+<button
+  type="button"
+  onClick={() => void viewVersionHistory(record)}
+  style={buttonStyle}
+>
+  View Version History
+</button>
+</div>
+
+   {versionTarget?.id === record.id && (
+  <form
+    onSubmit={uploadNewVersion}
+    style={{
+      marginTop: 16,
+      padding: 16,
+      background: "#f5f7fa",
+      borderRadius: 8,
+    }}
+  >
+    <h4>Upload a new version</h4>
+
+    <p style={{ fontSize: 14, color: "#596579" }}>
+      Choose the updated PDF, JPEG, or PNG file (maximum 10 MB).
+    </p>
+
+    <input
+      type="file"
+      accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+      required
+      onChange={(event) =>
+        setVersionFile(event.target.files?.[0] ?? null)
+      }
+      style={{ display: "block", marginBottom: 12 }}
+    />
+
+    <button type="submit" disabled={versionUploading} style={buttonStyle}>
+      {versionUploading ? "Uploading..." : "Save New Version"}
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        setVersionTarget(null);
+        setVersionFile(null);
+      }}
+      style={{ ...buttonStyle, marginLeft: 8 }}
+    >
+      Cancel
+    </button>
+  </form>
+)}
+
+{historyTarget?.id === record.id && (
+  <div
+    style={{
+      marginTop: 16,
+      padding: 16,
+      background: "#f5f7fa",
+      borderRadius: 8,
+    }}
+  >
+    <h4>Version History</h4>
+
+    {historyLoading ? (
+      <p>Loading version history...</p>
+    ) : history.length === 0 ? (
+      <p>No version history was returned.</p>
+    ) : (
+      <ol>
+        {history.map((version) => (
+          <li key={version.id} style={{ marginBottom: 10 }}>
+            <strong>
+              Version {version.version_number ?? 1}: {version.file_name}
+            </strong>
+            <br />
+            <span style={{ fontSize: 13, color: "#596579" }}>
+              {new Date(version.created_at).toLocaleString()} ·{" "}
+              {formatSize(Number(version.file_size))}
+            </span>
+            <br />
+            <button
+              type="button"
+              onClick={() => void downloadDocument(version)}
+              disabled={busyId === version.id}
+              style={{ ...buttonStyle, marginTop: 6 }}
+            >
+              Download this version
+            </button>
+          </li>
+        ))}
+      </ol>
+    )}
+
+    <button
+      type="button"
+      onClick={() => {
+        setHistoryTarget(null);
+        setHistory([]);
+      }}
+      style={buttonStyle}
+    >
+      Close History
+    </button>
+  </div>
+)}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p style={{ marginTop: 32, fontSize: 13, color: "#596579" }}>
+        Privacy controls: uploads are signature-validated, screened before
+        storage, isolated by account, and exposed through 60-second links.
+        OCR extraction is opt-in and requires human review before it can be
+        treated as structured health information.
+      </p>
+    </main>
   );
 }
+
+const buttonStyle: React.CSSProperties = {
+  background: "#176b59",
+  color: "#fff",
+  border: "none",
+  borderRadius: 8,
+  padding: "10px 16px",
+  cursor: "pointer",
+};
