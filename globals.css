@@ -120,17 +120,12 @@
 
   .page-container {
     width: 100%;
-    margin: 0;
+    max-width: none;
+    margin: 0 auto;
     min-height: 100vh;
     background: var(--background);
     position: relative;
     overflow-x: hidden;
-  }
-  @media (min-width: 768px) {
-    .page-container {
-      margin-left: 16rem;
-      width: calc(100% - 16rem);
-    }
   }
 }
 

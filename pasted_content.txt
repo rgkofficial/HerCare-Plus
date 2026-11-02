@@ -1,82 +1,36 @@
-Her Care — User Profile Page, Chat UI Redesign & AI Integration Audit
-TECHTOMORROW — OFFICIAL TASK ASSIGNMENT Hi Aravind Kumar GS,
+HerCare Plus: AI Conversational Healthcare Assistant & Best-in-Class Chat UI Studio
+🏥 Production Sprint Assignment: HerCare Plus — Best-in-Class AI Chat UI Studio
+Intern Designation: Lead Frontend & AI Chat UI Engineer Module Scope: AI Conversational Healthcare Assistant, Real-Time Streaming Chat Interface, Responsive Mobile/Web UX & Clinical Guidance Hub. Track: Full Stack Web & Software Development (Experienced Path) XP Reward: 1,500 XP | Sprint Window: 5 Days
 
-Project: Her Care Department: Web Development + AI Tools Assigned Duration: 2 Days — Intensive Development Sprint Assigned To: Aravind Kumar GS Email: aravindkumar06062006@gmail.com Intern ID: TTI000197 (Ref: TT-INT-2026-0197)
+🌟 Project Vision & Architectural Mandate
+HerCare Plus is Tech Tomorrow's flagship production-grade women's healthcare platform. Your core responsibility is to engineer a world-class, high-performance Conversational Healthcare Chat UI Studio that feels as fluid and responsive as ChatGPT, Perplexity, and v0, tailored specifically for clinical symptom intake, cycle health guidance, and telehealth assistance.
 
-Your task is to improve Her Care into a polished, responsive, reliable, and user-friendly application. You are responsible for auditing the existing codebase, completing the profile page, improving the chat experience, fixing existing bugs, and reviewing AI integration.
+🎯 Exhaustive Engineering Scope & Deliverables
+1. Premium Conversational Chat Interface (UI/UX)
+Fluid Message Feed: Auto-scrolling, bi-directional message rendering (User vs AI Assistant) with smooth fade-in and typewriter/streaming pulse animations.
+Rich Markdown & Content Rendering: Support for structured medical explanations with clean headings, bulleted symptom lists, medical reference tables, code snippets, and highlighted warning blocks.
+Interactive Quick-Prompt Chips: Contextual suggested prompts at the top of the chat (e.g., "Log period symptoms", "Explain PCOS risk factors", "Prepare questions for Gynecologist", "Understand iron deficiency anemia").
+Mobile-First Responsive Layout: Full-height viewport adaptation (dvh/vh units), sliding drawer menu for mobile navigation, and floating action buttons.
+Modern Theme Aesthetics: Sleek modern palette (slate/emerald/rose accents), subtle backdrop blurs (glassmorphism), and dark/light mode toggle support.
+2. Session Management & History Architecture
+Multi-Session Drawer: Sidebar showcasing active and past chat threads grouped by date (Today, Yesterday, Last 7 Days).
+Session Operations: Ability to start a new chat, rename conversations, search previous threads, and clear history.
+Client Persistence & Cache: Instant UI hydration with local storage caching synchronized with backend session APIs.
+3. Clinical Safeguards & Triage Warning Engine
+Urgent Triage Detection: Visual severity alert cards (amber for moderate advisory, crimson red for emergency symptoms like acute severe abdominal pain or heavy bleeding).
+Emergency Action Bar: Direct quick-call buttons for local emergency numbers and maternal health helplines when critical keywords are detected.
+Source Citation & Grounding: Clear visual badges for verified healthcare knowledge sources (e.g., "Verified Clinical Guideline • WHO / ACOG").
+Prominent Medical Disclaimer: Subtle, permanently visible legal footer stating: "HerCare Assistant provides educational health guidance and is not a substitute for professional medical diagnosis."
+4. Frontend-Backend Streaming Integration
+Streaming Pipeline: Implement handling for Server-Sent Events (SSE) or chunked HTTP stream reader for instantaneous character-by-character response rendering.
+Resilience & Fallbacks: Graceful connection retry mechanisms, friendly offline indicators, and input rate-limiting safeguards.
+🛠️ Technical Guidelines & Git Workflow
+Repository: Fork official repo: https://github.com/mohitraj8503/HerCare-Plus
 
-━━━━━━━━━━━━━━━━━━ 📅 DAY 1 — PROFILE PAGE & CHAT UI ━━━━━━━━━━━━━━━━━━ TASK 1: Complete the User Profile Page
+Branching: Work strictly on branch feat/ai-chat-ui-studio.
 
-Inspect the existing profile implementation and identify incomplete features.
-Build a premium, modern, responsive profile page consistent with Her Care's existing branding.
-Implement profile details, avatar, bio, and other relevant user information.
-Add profile editing, form validation, save/cancel actions, loading states, and error handling.
-Implement avatar upload if supported by the existing backend.
-Ensure profile changes persist correctly after refreshing.
-Protect private information and prevent unauthorized profile edits.
-TASK 2: Redesign the Chat Interface
+Commit Quality: Conventional commits (e.g., feat(chat-ui): add streaming message bubbles, feat(triage): add emergency banner component).
 
-Audit all existing chat components and identify UI and functionality issues.
-Create a clean, premium desktop chat layout with an intuitive conversation list and message area.
-Make the interface fully responsive across mobile, tablet, and desktop.
-Improve message bubbles, timestamps, avatars, spacing, typography, and conversation headers.
-Improve the message composer, attachment controls, and send button.
-Add appropriate loading skeletons, empty states, and error messages.
-Ensure long messages, emojis, and different screen sizes render correctly.
-TASK 3: Fix Mobile Chat Problems
+Code Quality: Zero ESLint errors, zero TypeScript compilation warnings, fully modular Tailwind CSS component hierarchy.
 
-Fix the keyboard covering the message input.
-Eliminate unwanted layout shifts and horizontal scrolling.
-Fix message auto-scroll without interrupting users reading older messages.
-Ensure the composer remains usable on small screens.
-Improve touch targets, navigation, and mobile conversation switching.
-━━━━━━━━━━━━━━━━━━ 📅 DAY 2 — BUG FIXES, AI & TESTING ━━━━━━━━━━━━━━━━━━ TASK 4: Chat Functionality Audit
-
-Verify message sending, receiving, ordering, and duplicate prevention.
-Fix broken send actions and incorrect message states.
-Implement clear sending, sent, failed, and retry states where supported.
-Test real-time updates and connection recovery.
-Audit conversation switching, message history, and search.
-Test attachment previews, upload progress, and upload errors if attachments are supported.
-Fix all reproducible chat bugs discovered during the audit.
-TASK 5: AI Tools Integration
-
-Inspect the existing AI implementation and identify incomplete functionality.
-Verify AI response handling, loading indicators, and error recovery.
-Fix integration issues without exposing API keys in frontend code.
-Prevent duplicate AI requests and incorrect conversation associations.
-Verify that private user conversations and AI context remain isolated.
-Document any feature blocked by missing backend support or credentials.
-TASK 6: Overall UI/UX Improvements
-
-Maintain consistent colors, typography, spacing, buttons, and component styles.
-Improve accessibility, keyboard navigation, and visible focus states.
-Add proper loading, success, empty, and failure states.
-Optimize unnecessarily repeated renders and large conversation lists where needed.
-Remove broken links, dead buttons, and placeholder functionality identified during the audit.
-TASK 7: Testing & Final Delivery
-
-Run available lint, type-check, build, and automated tests.
-Test profile editing and chat flows on desktop and mobile.
-Check authentication, authorization, and privacy-sensitive operations.
-Fix regressions caused by your changes.
-Capture screenshots of the completed profile page and chat UI.
-Submit all changes through a dedicated Git branch and pull request.
-Provide a list of completed tasks, remaining bugs, blockers, and files changed.
-━━━━━━━━━━━━━━━━━━ 📋 MANDATORY DELIVERABLES ━━━━━━━━━━━━━━━━━━
-
-Fully functional profile page.
-Improved desktop and mobile chat UI.
-Verified fixes for existing chat bugs.
-AI integration audit and supported fixes.
-Build/test results and screenshots.
-Updated technical documentation where necessary.
-A detailed report of unfinished work discovered in the repository, with priorities and reproduction steps.
-IMPORTANT INSTRUCTIONS
-
-First inspect the repository, README, existing architecture, and pending work.
-Do not replace working features with mock data.
-Do not introduce unnecessary dependencies or rewrite the entire application without approval.
-Preserve existing functionality and user data.
-Do not mark untested features as completed.
-If any task cannot be completed within two days, report the blocker honestly and provide the remaining implementation plan. 🎯 Priority: Functionality → Responsiveness → Reliability → Visual Polish. The objective is not merely to make the application look attractive. The profile and chat features must work correctly, remain responsive, and be ready for a proper review. Please begin with the repository audit and share your initial findings before making major changes. Best of luck, Aravind! Build it with quality, attention to detail, and ownership. — Team TechTomorrow
+PR Submission: Open a Pull Request targeting main with high-resolution screenshots/Loom video demo, and submit your PR + live Vercel demo link on your Intern Dashboard.
