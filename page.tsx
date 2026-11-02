@@ -1,908 +1,492 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Activity,
-  Droplets,
-  Moon,
-  Heart,
-  Utensils,
-} from "lucide-react";
+import BottomNav from "@/components/BottomNav";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { Mic, Send, X, Heart, Loader2, Stethoscope } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 
-import MoodStressJournal from "@/components/wellness/MoodStressJournal";
-import HabitTracker from "@/components/wellness/HabitTracker";
-import WellnessPreferences from "@/components/wellness/WellnessPreferences";
+type Language = "en" | "hi" | "ta" | "te" | "bn" | "mr";
 
-import { generateWellnessRecommendations } from "@/lib/wellness/wellnessRecommendations";
-import { storage } from "@/lib/storage";
-
-type WellnessCategory =
-  | "hydration"
-  | "nutrition"
-  | "activity"
-  | "sleep"
-  | "mood";
-
-interface WellnessMetric {
-  category: WellnessCategory;
-  label: string;
-  value: number;
-  goal: number;
-  unit: string;
-}
-
-interface WellnessEntry {
-  id: string;
-  category: WellnessCategory;
-  date: string;
-  value: number;
-  unit: string;
-  created_at: string;
-}
-
-const initialMetrics: WellnessMetric[] = [
-  {
-    category: "hydration",
-    label: "Hydration",
-    value: 0,
-    goal: 2000,
-    unit: "ml",
+const LANGUAGES: Record<
+  Language,
+  { name: string; label: string; greeting: string }
+> = {
+  en: {
+    name: "English",
+    label: "English",
+    greeting: "How are you feeling today?",
   },
-  {
-    category: "nutrition",
-    label: "Meals",
-    value: 0,
-    goal: 3,
-    unit: "meals",
+  hi: {
+    name: "Hindi",
+    label: "हिंदी",
+    greeting: "आज आप कैसा महसूस कर रही हैं?",
   },
-  {
-    category: "activity",
-    label: "Activity",
-    value: 0,
-    goal: 30,
-    unit: "minutes",
-  },
-  {
-    category: "sleep",
-    label: "Sleep",
-    value: 0,
-    goal: 8,
-    unit: "hours",
-  },
-  {
-    category: "mood",
-    label: "Mood",
-    value: 0,
-    goal: 5,
-    unit: "score",
-  },
-];
-
-const icons = {
-  hydration: Droplets,
-  nutrition: Utensils,
-  activity: Activity,
-  sleep: Moon,
-  mood: Heart,
+  ta: { name: "Tamil", label: "தமிழ்", greeting: "என்ன பிரச்சனை?" },
+  te: { name: "Telugu", label: "తెలుగు", greeting: "ఏమి సమస్య?" },
+  bn: { name: "Bengali", label: "বাংলা", greeting: "কী समस्या?" },
+  mr: { name: "Marathi", label: "मराठी", greeting: "काय त्रास आहे?" },
 };
 
-const categories: WellnessCategory[] = [
-  "hydration",
-  "nutrition",
-  "activity",
-  "sleep",
-  "mood",
+const WARM_INITIAL_MESSAGES = [
+  "You're safe here. Share only what you're comfortable with.",
+  "I'm here with you. No judgment. No rush.",
+  "This is your space. Take all the time you need.",
 ];
 
-function isWellnessCategory(
-  value: unknown
-): value is WellnessCategory {
-  return categories.some((category) => category === value);
-}
+const SYMPTOM_SUGGESTIONS_YOUNG = [
+  "💭 First period questions",
+  "💭 Period pain",
+  "💭 Changing body",
+];
 
-/**
- * Returns the date in the user's local timezone.
- *
- * Avoid using toISOString().slice(0, 10) here because
- * UTC can produce the wrong date near midnight.
- */
-function getLocalDate(): string {
-  const now = new Date();
+const SYMPTOM_SUGGESTIONS_ADULT = [
+  "💭 Irregular periods",
+  "💭 Pain or cramps",
+  "💭 Pregnancy questions",
+];
 
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+const SYMPTOM_SUGGESTIONS_MATURE = [
+  "💭 Menopause symptoms",
+  "💭 Heavy bleeding",
+  "💭 Bone health",
+];
 
-  return `${year}-${month}-${day}`;
-}
+type AnalysisResult = {
+  conversation: string;
+  show_doctor_choice: boolean;
+  reasoning?: any;
+};
 
-/**
- * Converts saved entries into today's dashboard totals.
- *
- * Hydration, meals, and activity are accumulated.
- * Sleep and mood use the most recently saved entry.
- */
-function calculateDailyMetrics(
-  entries: WellnessEntry[],
-  date: string
-): {
-  values: Record<WellnessCategory, number>;
-  recorded: WellnessCategory[];
-} {
-  const values: Record<WellnessCategory, number> = {
-    hydration: 0,
-    nutrition: 0,
-    activity: 0,
-    sleep: 0,
-    mood: 0,
-  };
+type Message = {
+  id: string;
+  sender: "user" | "ai";
+  text?: string;
+  analysis?: AnalysisResult;
+};
 
-  const recorded = new Set<WellnessCategory>();
+export default function SymptomChecker() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [selectedLang, setSelectedLang] = useState<Language>("en");
+  const [loading, setLoading] = useState(false);
+  const [nickname, setNickname] = useState("friend");
+  const [age, setAge] = useState<string>("25");
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [isFindingDoctor, setIsFindingDoctor] = useState(false);
 
-  const latest: Partial<
-    Record<WellnessCategory, string>
-  > = {};
+  const {
+    isListening,
+    transcript,
+    startListening,
+    stopListening,
+    setTranscript,
+  } = useVoiceInput();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  for (const entry of entries) {
-    if (
-      entry.date !== date ||
-      !isWellnessCategory(entry.category)
-    ) {
-      continue;
-    }
-
-    const value = Number(entry.value);
-
-    if (!Number.isFinite(value)) {
-      continue;
-    }
-
-    recorded.add(entry.category);
-
-    if (
-      entry.category === "sleep" ||
-      entry.category === "mood"
-    ) {
-      const timestamp = entry.created_at ?? "";
-
-      if (
-        latest[entry.category] === undefined ||
-        timestamp >= latest[entry.category]!
-      ) {
-        values[entry.category] = value;
-        latest[entry.category] = timestamp;
-      }
-    } else {
-      values[entry.category] += value;
-    }
-  }
-
-  return {
-    values,
-    recorded: Array.from(recorded),
-  };
-}
-
-export default function WellnessPage() {
-  const [metrics, setMetrics] =
-    useState<WellnessMetric[]>(initialMetrics);
-
-  const [selectedCategory, setSelectedCategory] =
-    useState<WellnessCategory>("hydration");
-
-  const [inputValue, setInputValue] = useState("");
-
-  const [selectedGoals, setSelectedGoals] = useState<
-    WellnessCategory[]
-  >(["hydration", "nutrition", "activity", "sleep", "mood"]);
-
-  const [recordedCategories, setRecordedCategories] = useState<
-    WellnessCategory[]
-  >([]);
-
-  const [journalStress, setJournalStress] = useState<
-    number | null
-  >(null);
-
-  const [entries, setEntries] = useState<WellnessEntry[]>([]);
-
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [apiMessage, setApiMessage] = useState("");
-  const [isAuthenticated, setIsAuthenticated] =
-    useState(false);
-  const [cycleEntriesCount, setCycleEntriesCount] = useState<number | null>(null);
-
-  const selectedMetric = metrics.find(
-    (metric) => metric.category === selectedCategory
-  );
-
-  /**
-   * Load saved entries from the authenticated API.
-   */
   useEffect(() => {
-    let cancelled = false;
+    const savedName = localStorage.getItem("hercare_nickname");
+    const savedAge = localStorage.getItem("hercare_age");
+    if (savedName) setNickname(savedName);
+    if (savedAge) setAge(savedAge);
 
-    async function loadEntries() {
-      setIsLoading(true);
-      setApiMessage("");
+    // Initial message personalization
+    const ageNum = savedAge ? parseInt(savedAge) : 25;
+    let welcomeText =
+      WARM_INITIAL_MESSAGES[
+        Math.floor(Math.random() * WARM_INITIAL_MESSAGES.length)
+      ];
 
-      try {
-        const response = await fetch("/api/wellness", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (cancelled) return;
-
-        if (response.status === 401) {
-          setIsAuthenticated(false);
-          setApiMessage(
-            "Please sign in to load and save wellness entries."
-          );
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            "Unable to load saved wellness entries."
-          );
-        }
-
-        const result: {
-          entries?: WellnessEntry[];
-          goals?: Array<{ category: WellnessCategory; target: number }>;
-          preferences?: { cycle_integration_consent?: boolean };
-        } = await response.json();
-
-        if (cancelled) return;
-
-        const savedEntries = Array.isArray(result.entries)
-          ? result.entries
-          : [];
-
-        if (Array.isArray(result.goals) && result.goals.length > 0) {
-          setSelectedGoals(result.goals.map((goal) => goal.category));
-          setMetrics((previous) => previous.map((metric) => {
-            const goal = result.goals?.find((item) => item.category === metric.category);
-            return goal ? { ...metric, goal: Number(goal.target) } : metric;
-          }));
-        }
-
-        if (result.preferences?.cycle_integration_consent) {
-          const cycleEntries = await storage.getCycleEntries();
-          setCycleEntriesCount(cycleEntries.length);
-        } else {
-          setCycleEntriesCount(null);
-        }
-
-        const today = getLocalDate();
-
-        const daily = calculateDailyMetrics(
-          savedEntries,
-          today
-        );
-
-        setEntries(savedEntries);
-
-        setMetrics((previous) =>
-          previous.map((metric) => ({
-            ...metric,
-            value: daily.values[metric.category],
-          }))
-        );
-
-        setRecordedCategories(daily.recorded);
-        setIsAuthenticated(true);
-      } catch {
-        if (!cancelled) {
-          setApiMessage(
-            "Unable to load saved wellness entries. Please try refreshing the page."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+    if (ageNum < 18) {
+      welcomeText = `Hey ${savedName || "friend"} 🌸, you're safe here. I can help you understand what's happening with your body. What's on your mind?`;
+    } else if (ageNum > 45) {
+      welcomeText = `Hello ${savedName || "there"} 🌸. Health at every stage is important. How can I support your wellbeing today?`;
+    } else {
+      welcomeText = `Hi ${savedName || "friend"} 💜. This is your private space. Tell me what's been on your mind lately?`;
     }
 
-    void loadEntries();
-
-    return () => {
-      cancelled = true;
-    };
+    setMessages([
+      {
+        id: "1",
+        sender: "ai",
+        text: welcomeText,
+      },
+    ]);
   }, []);
 
-  function toggleGoal(category: WellnessCategory) {
-    setSelectedGoals((previous) => {
-      const next = previous.includes(category)
-        ? previous.filter((item) => item !== category)
-        : [...previous, category];
-      if (next.includes(category)) {
-        const metric = metrics.find((item) => item.category === category);
-        if (metric) void fetch("/api/wellness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "goal", category, target: metric.goal, unit: metric.unit }) });
-      }
-      return next;
-    });
-  }
+  const getSuggestions = () => {
+    const ageNum = parseInt(age);
+    if (ageNum < 18) return SYMPTOM_SUGGESTIONS_YOUNG;
+    if (ageNum > 45) return SYMPTOM_SUGGESTIONS_MATURE;
+    return SYMPTOM_SUGGESTIONS_ADULT;
+  };
 
-  function updateGoal(
-    category: WellnessCategory,
-    newGoal: number
-  ) {
-    if (
-      !Number.isFinite(newGoal) ||
-      newGoal <= 0
-    ) {
-      return;
+  useEffect(() => {
+    if (transcript) {
+      setInputText((prev) => (prev ? prev + " " + transcript : transcript));
+      setTranscript("");
     }
+  }, [transcript, setTranscript]);
 
-    setMetrics((previous) =>
-      previous.map((metric) =>
-        metric.category === category
-          ? { ...metric, goal: newGoal }
-          : metric
-      )
-    );
-    const metric = metrics.find((item) => item.category === category);
-    if (metric) void fetch("/api/wellness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "goal", category, target: newGoal, unit: metric.unit }) });
-  }
+  // Manual scroll helper
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 100);
+  };
 
-  function getMetricValue(
-    category: WellnessCategory
-  ): number {
-    return (
-      metrics.find(
-        (metric) => metric.category === category
-      )?.value ?? 0
-    );
-  }
+  const isInitialLoad = useRef(true);
 
-  function recordedValue(
-    category: WellnessCategory
-  ): number | null {
-    return recordedCategories.includes(category)
-      ? getMetricValue(category)
-      : null;
-  }
-
-  const recommendations =
-    generateWellnessRecommendations({
-      goals: selectedGoals,
-      hydrationMl: recordedValue("hydration"),
-      activityMinutes: recordedValue("activity"),
-      sleepHours: recordedValue("sleep"),
-      moodScore: recordedValue("mood"),
-      stressScore: journalStress,
-      cycleEntriesCount,
-    });
-
-  /**
-   * Save a wellness entry to Supabase through the API.
-   */
-  async function addEntry() {
-    if (isSaving || isLoading) {
-      return;
+  // Only scroll automatically for the very first welcome message
+  useEffect(() => {
+    if (isInitialLoad.current && messages.length > 0) {
+      scrollToBottom();
+      isInitialLoad.current = false;
     }
+  }, [messages.length]);
 
-    setApiMessage("");
+  const handleSend = async (text?: string) => {
+    const messageToSend = typeof text === "string" ? text : inputText;
+    if (!messageToSend.trim()) return;
 
-    if (!isAuthenticated) {
-      setApiMessage(
-        "Please sign in before saving a wellness entry."
-      );
-      return;
-    }
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      sender: "user",
+      text: messageToSend,
+    };
 
-    if (!selectedMetric) {
-      setApiMessage("Please select a valid category.");
-      return;
-    }
+    setMessages((prev) => [...prev, userMsg]);
+    setInputText("");
+    setLoading(true);
+    setShowSuggestions(false);
 
-    const value = Number(inputValue);
-
-    if (
-      inputValue.trim() === "" ||
-      !Number.isFinite(value) ||
-      value <= 0
-    ) {
-      setApiMessage(
-        "Please enter a valid positive value."
-      );
-      return;
-    }
-
-    if (
-      selectedCategory === "mood" &&
-      (!Number.isInteger(value) ||
-        value < 1 ||
-        value > 5)
-    ) {
-      setApiMessage(
-        "Mood must be a whole number between 1 and 5."
-      );
-      return;
-    }
-
-    if (
-      selectedCategory === "sleep" &&
-      value > 24
-    ) {
-      setApiMessage(
-        "Sleep must be between 0 and 24 hours."
-      );
-      return;
-    }
-
-    if (
-      selectedCategory === "nutrition" &&
-      !Number.isInteger(value)
-    ) {
-      setApiMessage(
-        "Please enter a whole number of meals."
-      );
-      return;
-    }
-
-    const entryDate = getLocalDate();
-
-    setIsSaving(true);
+    // Scroll to bottom when user sends
+    scrollToBottom();
 
     try {
-      const response = await fetch("/api/wellness", {
+      const response = await fetch("/api/gemini", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "entry",
-          category: selectedCategory,
-          date: entryDate,
-          value,
-          unit: selectedMetric.unit,
+          age: age,
+          symptoms: userMsg.text,
+          language: LANGUAGES[selectedLang].name,
+          nickname,
         }),
       });
 
-      if (response.status === 401) {
-        setIsAuthenticated(false);
-        setApiMessage(
-          "Your session has expired. Please sign in again."
-        );
-        return;
-      }
+      if (!response.ok) throw new Error("AI Failed");
 
-      const result: {
-        entry?: WellnessEntry;
-        error?: string;
-        details?: unknown;
-      } = await response.json();
+      const data: AnalysisResult = await response.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "ai",
+          analysis: data,
+        },
+      ]);
 
-      if (!response.ok || !result.entry) {
-        if (response.status === 400) {
-          setApiMessage(
-            "The entry was rejected by validation. Please check the value and try again."
-          );
-        } else {
-          setApiMessage(
-            result.error ??
-              "Unable to save wellness entry."
-          );
-        }
-
-        return;
-      }
-
-      /**
-       * Update the dashboard only after the API
-       * confirms the entry was saved.
-       */
-      const updatedEntries = [
-        result.entry,
-        ...entries,
-      ];
-
-      const daily = calculateDailyMetrics(
-        updatedEntries,
-        getLocalDate()
-      );
-
-      setEntries(updatedEntries);
-
-      setMetrics((previous) =>
-        previous.map((metric) => ({
-          ...metric,
-          value: daily.values[metric.category],
-        }))
-      );
-
-      setRecordedCategories(daily.recorded);
-      setInputValue("");
-
-      setApiMessage(
-        "Wellness entry saved successfully!"
-      );
-    } catch {
-      setApiMessage(
-        "Unable to connect to the server. Please try again."
-      );
+      // Scroll to bottom when AI responds
+      scrollToBottom();
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "ai",
+          text: "I am having trouble connecting right now. But you are not alone - please try again in a moment, or reach out to a trusted doctor.",
+        },
+      ]);
+      // Scroll to bottom on error message too
+      scrollToBottom();
     } finally {
-      setIsSaving(false);
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-pink-50 via-white to-purple-50 px-5 py-10 pb-32">
-      <div className="mx-auto max-w-5xl">
-        {/* Page header */}
-        <header className="mb-10">
-          <p className="text-sm font-semibold uppercase tracking-widest text-pink-600">
-            HerCare Plus
-          </p>
+    <div className="flex flex-col h-[100dvh] bg-[#FFF5F7] relative overflow-hidden font-nunito">
+      {/* Optimized Background - Lightweight CSS Gradients */}
+      <div className="absolute top-0 right-0 w-full h-[500px] bg-gradient-to-b from-pink-100/40 to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-full h-[300px] bg-gradient-to-t from-purple-100/40 to-transparent pointer-events-none" />
 
-          <h1 className="mt-2 text-3xl font-bold text-gray-900">
-            My Wellness Dashboard
+      {/* Header - Optimized Glassmorphism */}
+      <div className="pt-12 pb-4 px-6 bg-white/90 backdrop-blur-md border-b border-gray-100 flex justify-between items-center z-10 sticky top-0 shadow-sm">
+        <div>
+          <h1 className="text-2xl font-black text-gray-800 tracking-tight flex items-center gap-2">
+            HerCare
+            <span className="text-pink-500 text-3xl leading-none">⁺</span>
           </h1>
-
-          <p className="mt-3 text-gray-600">
-            Track your daily habits and understand your
-            wellness progress.
-          </p>
-        </header>
-
-        {/* API status */}
-        {isLoading && (
-          <div
-            role="status"
-            className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800"
-          >
-            Loading your saved wellness entries...
+          <div className="flex items-center gap-2 mt-1">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+             Women&apos;s Health Support
+            </p>
           </div>
-        )}
+        </div>
 
-        {apiMessage && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="mb-6 rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900"
+        {/* Enhanced Language Selector */}
+        <div className="relative group">
+          <select
+            value={selectedLang}
+            onChange={(e) => setSelectedLang(e.target.value as Language)}
+            className="bg-white/80 backdrop-blur-md border border-gray-200 text-gray-700 text-xs font-bold rounded-2xl pl-4 pr-8 py-2.5 outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-all appearance-none cursor-pointer hover:bg-white shadow-sm hover:shadow-md"
           >
-            {apiMessage}
+            {Object.entries(LANGUAGES).map(([code, lang]) => (
+              <option key={code} value={code} className="text-base py-1">
+                {lang.label}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-pink-500 transition-colors">
+            <svg
+              width="10"
+              height="6"
+              viewBox="0 0 10 6"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M1 1L5 5L9 1"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Wellness goals */}
-        <section className="mb-8 rounded-3xl border border-pink-100 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-900">
-            My Wellness Goals
-          </h2>
-
-          <p className="mt-2 text-sm text-gray-500">
-            Select the wellness areas you want to focus on.
-          </p>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            {metrics.map((metric) => {
-              const selected = selectedGoals.includes(
-                metric.category
-              );
-
-              return (
-                <button
-                  key={metric.category}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    toggleGoal(metric.category)
-                  }
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    selected
-                      ? "border-pink-600 bg-pink-600 text-white"
-                      : "border-gray-300 bg-white text-gray-700 hover:border-pink-400"
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 pb-8 space-y-6">
+        <AnimatePresence>
+          {messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+            >
+              {msg.text ? (
+                <div
+                  className={`max-w-[85%] p-5 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
+                    msg.sender === "user"
+                      ? "bg-gradient-to-br from-pink-500 to-rose-500 text-white rounded-br-none shadow-pink-200"
+                      : "bg-white text-gray-600 border border-gray-100 rounded-bl-none shadow-gray-100"
                   }`}
                 >
-                  {metric.label}
-                  {selected ? " ✓" : ""}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Editable targets */}
-          <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {metrics
-              .filter(
-                (metric) =>
-                  selectedGoals.includes(
-                    metric.category
-                  ) && metric.category !== "mood"
-              )
-              .map((metric) => (
-                <div
-                  key={metric.category}
-                  className="rounded-2xl border border-gray-200 p-4"
-                >
-                  <label
-                    htmlFor={`goal-${metric.category}`}
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    {metric.label} Target (
-                    {metric.unit})
-                  </label>
-
-                  <input
-                    id={`goal-${metric.category}`}
-                    type="number"
-                    min="0.1"
-                    step="any"
-                    value={metric.goal}
-                    onChange={(event) =>
-                      updateGoal(
-                        metric.category,
-                        Number(event.target.value)
-                      )
-                    }
-                    className="mt-2 w-full rounded-xl border border-gray-300 p-3 text-gray-900"
-                  />
+                  {msg.text}
                 </div>
-              ))}
-          </div>
-        </section>
-
-        {/* Daily wellness overview */}
-        <section
-          aria-label="Daily wellness overview"
-          className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          {metrics.map((metric) => {
-            const Icon = icons[metric.category];
-
-            const progress =
-              metric.category === "mood"
-                ? 0
-                : Math.min(
-                    (metric.value / metric.goal) * 100,
-                    100
-                  );
-
-            return (
-              <article
-                key={metric.category}
-                className="rounded-3xl border border-pink-100 bg-white p-6 shadow-sm"
-              >
-                <div className="mb-5 flex items-center gap-3">
-                  <div className="rounded-2xl bg-pink-100 p-3 text-pink-600">
-                    <Icon size={24} />
-                  </div>
-
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    {metric.label}
-                  </h2>
-                </div>
-
-                <p className="text-2xl font-bold text-gray-900">
-                  {metric.value}
-
-                  <span className="ml-2 text-sm font-normal text-gray-500">
-                    {metric.unit}
-                  </span>
-                </p>
-
-                <p className="mt-2 text-sm text-gray-500">
-                  {metric.category === "mood"
-                    ? "Self-reported mood (1–5)"
-                    : `Personal goal: ${metric.goal} ${metric.unit}`}
-                </p>
-
-                {/* Mood is a score, not a progress goal */}
-                {metric.category !== "mood" && (
-                  <>
-                    <div
-                      className="mt-5 h-3 overflow-hidden rounded-full bg-gray-100"
-                      role="progressbar"
-                      aria-label={`${metric.label} progress`}
-                      aria-valuenow={progress}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                    >
-                      <div
-                        className="h-full rounded-full bg-pink-500 transition-all"
-                        style={{
-                          width: `${progress}%`,
-                        }}
+              ) : msg.analysis ? (
+                <div className="max-w-[95%] w-full bg-white rounded-[2rem] rounded-bl-none border border-white shadow-xl shadow-purple-900/5 overflow-hidden">
+                  <div className="p-6">
+                    <p className="text-gray-600 text-sm leading-7 font-medium">
+                      <Heart
+                        size={16}
+                        className="inline mr-2 text-pink-500 mb-0.5"
+                        fill="currentColor"
                       />
-                    </div>
-
-                    <p className="mt-2 text-right text-sm text-gray-500">
-                      {Math.round(progress)}% complete
+                      {msg.analysis.conversation}
                     </p>
-                  </>
-                )}
-              </article>
-            );
-          })}
-        </section>
 
-        {/* Add wellness entry */}
-        <section className="mt-10 rounded-3xl border border-purple-100 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-900">
-            Add Wellness Entry
-          </h2>
+                    {msg.analysis.show_doctor_choice && (
+                      <div className="mt-6 pt-4 border-t border-gray-50 animate-fade-in">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-center text-gray-400 mb-4">
+                          Recommended Next Step
+                        </p>
+                        <div className="flex gap-3 justify-center">
+                          <button
+                            onClick={() => setIsFindingDoctor(true)}
+                            className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wide shadow-lg shadow-pink-200 hover:shadow-xl hover:scale-105 transition-all"
+                          >
+                            Find a Doctor
+                          </button>
+                          <button className="bg-gray-50 text-gray-500 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wide hover:bg-gray-100 transition-all">
+                            Maybe Later
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-          <p className="mt-2 text-sm text-gray-500">
-            Record your daily wellness activities.
-            Entries are saved to your account.
-          </p>
-
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="wellness-category"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Category
-              </label>
-
-              <select
-                id="wellness-category"
-                value={selectedCategory}
-                disabled={isSaving}
-                onChange={(event) => {
-                  setSelectedCategory(
-                    event.target
-                      .value as WellnessCategory
-                  );
-
-                  setInputValue("");
-                  setApiMessage("");
-                }}
-                className="w-full rounded-xl border border-gray-300 p-3 text-gray-900 disabled:opacity-60"
-              >
-                {metrics.map((metric) => (
-                  <option
-                    key={metric.category}
-                    value={metric.category}
-                  >
-                    {metric.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="wellness-value"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Value ({selectedMetric?.unit})
-              </label>
-
-              <input
-                id="wellness-value"
-                type="number"
-                min={
-                  selectedCategory === "mood"
-                    ? "1"
-                    : "0.01"
-                }
-                max={
-                  selectedCategory === "mood"
-                    ? "5"
-                    : selectedCategory === "sleep"
-                      ? "24"
-                      : undefined
-                }
-                step={
-                  selectedCategory === "mood" ||
-                  selectedCategory === "nutrition"
-                    ? "1"
-                    : "any"
-                }
-                value={inputValue}
-                disabled={isSaving}
-                onChange={(event) =>
-                  setInputValue(event.target.value)
-                }
-                placeholder="Enter value"
-                className="w-full rounded-xl border border-gray-300 p-3 text-gray-900 disabled:opacity-60"
-              />
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-white border border-gray-100 p-4 rounded-3xl rounded-bl-none flex items-center gap-3 shadow-sm">
+              <Loader2 className="animate-spin text-pink-400" size={20} />
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                HerCare is thinking...
+              </span>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => void addEntry()}
-            disabled={
-              isSaving ||
-              isLoading ||
-              !isAuthenticated
-            }
-            className="mt-6 rounded-xl bg-pink-600 px-6 py-3 font-semibold text-white transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSaving
-              ? "Saving..."
-              : "Save Wellness Entry"}
-          </button>
-
-          {!isLoading && !isAuthenticated && (
-            <p className="mt-3 text-sm text-gray-600">
-              Sign in to your HerCare Plus account
-              to save entries.
-            </p>
-          )}
-        </section>
-
-        {/* Journal */}
-        <section className="mt-10">
-          <MoodStressJournal
-            onStressChange={setJournalStress}
-          />
-        </section>
-
-        {/* Habit tracker */}
-        <section className="mt-10">
-          <HabitTracker />
-        </section>
-
-        {/* Personalized recommendations */}
-        <section
-          aria-labelledby="wellness-recommendations-title"
-          className="mt-10 rounded-3xl border border-pink-100 bg-white p-6 shadow-sm"
-        >
-          <h2
-            id="wellness-recommendations-title"
-            className="text-xl font-bold text-gray-900"
-          >
-            Personalized Wellness Recommendations
-          </h2>
-
-          <p className="mt-2 text-sm text-gray-500">
-            Educational suggestions based on your
-            selected goals and available wellness
-            entries. No entry does not mean poor
-            wellness.
-          </p>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {recommendations.map(
-              (recommendation) => (
-                <article
-                  key={recommendation.id}
-                  className="rounded-2xl border border-purple-100 bg-purple-50 p-5"
-                >
-                  <h3 className="font-semibold text-purple-900">
-                    {recommendation.title}
-                  </h3>
-
-                  <p className="mt-2 text-sm leading-relaxed text-gray-700">
-                    {recommendation.description}
-                  </p>
-
-                  <span className="mt-3 inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-purple-700">
-                    General wellness information
-                  </span>
-                </article>
-              )
-            )}
-          </div>
-        </section>
-
-        <WellnessPreferences />
-        {/* Disclaimer */}
-        <aside className="mt-8 rounded-2xl bg-purple-100 p-5 text-sm text-purple-900">
-          <strong>Wellness information only:</strong>{" "}
-          This dashboard is intended for general
-          wellness tracking and does not provide
-          medical diagnosis or treatment advice.
-        </aside>
-
-        <p className="mt-4 text-sm text-gray-500">
-          Wellness entries, journal entries, habits, and editable goal
-          preferences are saved through the authenticated API when you are signed in.
-          Default goals are demonstration values,
-          not personalized medical targets.
-        </p>
+        )}
+        <div ref={messagesEndRef} className="h-56 shrink-0" />
       </div>
-    </main>
+
+      <AnimatePresence>
+        {showSuggestions && messages.length === 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="px-4 pb-2 flex flex-wrap gap-2 justify-center"
+          >
+            {getSuggestions().map((suggestion, i) => (
+              <button
+                key={i}
+                onClick={() => handleSend(suggestion.replace("💭 ", ""))}
+                className="bg-white border border-gray-50 text-gray-600 px-5 py-3 rounded-2xl text-xs font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all flex items-center gap-2"
+              >
+                <Stethoscope size={16} className="text-pink-500" />
+                {suggestion.replace("💭 ", "")}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isFindingDoctor && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsFindingDoctor(false)}
+              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl p-6 shadow-2xl max-w-md mx-auto"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold text-gray-800">
+                  Find a doctor perfect for you
+                </h3>
+                <button
+                  onClick={() => setIsFindingDoctor(false)}
+                  className="p-2 bg-gray-50 rounded-full"
+                >
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600 mb-4">Are you looking for:</p>
+
+              <div className="space-y-3">
+                <Link href="/care?filter=women" className="block">
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-pink-50 border border-pink-100 hover:bg-pink-100 transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-pink-200 flex items-center justify-center text-xl">
+                      👩‍⚕️
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-pink-900">
+                        Women&apos;s Health Specialist
+                      </h4>
+                      <p className="text-xs text-pink-700">
+                        Gynecologists & OB-GYNs
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+
+                <Link href="/care?filter=general" className="block">
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-purple-50 border border-purple-100 hover:bg-purple-100 transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-purple-200 flex items-center justify-center text-xl">
+                      🩺
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-purple-900">
+                        General Doctor
+                      </h4>
+                      <p className="text-xs text-purple-700">
+                        For fever, flu, general checkups
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+
+                <Link href="/care?filter=free" className="block">
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-green-50 border border-green-100 hover:bg-green-100 transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center text-xl">
+                      🏥
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-green-900">
+                        Free / Low-Cost Clinic
+                      </h4>
+                      <p className="text-xs text-green-700">
+                        NGOs and government hospitals
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Input Pill - Fixed above Nav */}
+      <div className="fixed bottom-[5.5rem] left-0 right-0 px-4 z-30 pointer-events-none">
+        <div className="max-w-md mx-auto pointer-events-auto">
+          <div className="bg-white/90 backdrop-blur-xl p-1.5 pl-2 rounded-[2.5rem] shadow-2xl shadow-purple-900/10 border border-white/60 flex items-center transition-all focus-within:shadow-pink-300/40 focus-within:scale-[1.01] focus-within:bg-white">
+            <div className="w-10 h-10 bg-pink-50 rounded-full flex items-center justify-center text-xl shrink-0 animate-bounce-slow">
+              🌸
+            </div>
+            <input
+              type="text"
+              className="flex-1 bg-transparent border-none outline-none px-3 py-3 text-gray-700 placeholder-gray-400 font-bold text-sm"
+              placeholder={
+                isListening ? "Listening..." : "Tell me how you feel..."
+              }
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            />
+
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`p-3 rounded-2xl transition-all ${
+                isListening
+                  ? "bg-red-50 text-red-500 animate-pulse"
+                  : "bg-gray-50 text-gray-400 hover:bg-gray-100"
+              }`}
+            >
+              {isListening ? <X size={20} /> : <Mic size={20} />}
+            </button>
+
+            <button
+              onClick={() => handleSend()}
+              disabled={!inputText.trim()}
+              className="p-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-2xl shadow-lg shadow-pink-200 hover:shadow-xl hover:scale-105 disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none disabled:scale-100 transition-all"
+            >
+              <Send size={20} />
+            </button>
+          </div>
+          <div className="flex justify-center mt-3 px-2 text-center">
+            <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+              Health support • AI-generated guidance
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <BottomNav />
+    </div>
   );
 }
