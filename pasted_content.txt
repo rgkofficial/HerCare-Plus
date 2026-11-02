@@ -1,38 +1,82 @@
-HerCare Plus: Authentication, Multi-Tenant RBAC Identity & Patient Privacy Management
-Dear Ruchika Dingria,
+Her Care — User Profile Page, Chat UI Redesign & AI Integration Audit
+TECHTOMORROW — OFFICIAL TASK ASSIGNMENT Hi Aravind Kumar GS,
 
-Congratulations on your selection for our flagship production engineering release: HerCare Plus (https://github.com/mohitraj8503/HerCare-Plus).
+Project: Her Care Department: Web Development + AI Tools Assigned Duration: 2 Days — Intensive Development Sprint Assigned To: Aravind Kumar GS Email: aravindkumar06062006@gmail.com Intern ID: TTI000197 (Ref: TT-INT-2026-0197)
 
-You have been formally designated as Full Stack Security & Identity Engineer and assigned full architectural ownership of:
+Your task is to improve Her Care into a polished, responsive, reliable, and user-friendly application. You are responsible for auditing the existing codebase, completing the profile page, improving the chat experience, fixing existing bugs, and reviewing AI integration.
 
-HerCare Plus: Authentication, Multi-Tenant RBAC Identity & Patient Privacy Management
-Classification: Security-Critical • Platform Identity & Privacy
+━━━━━━━━━━━━━━━━━━ 📅 DAY 1 — PROFILE PAGE & CHAT UI ━━━━━━━━━━━━━━━━━━ TASK 1: Complete the User Profile Page
 
-Scope: Complete identity, authentication, granular RBAC, and patient data privacy management system.
+Inspect the existing profile implementation and identify incomplete features.
+Build a premium, modern, responsive profile page consistent with Her Care's existing branding.
+Implement profile details, avatar, bio, and other relevant user information.
+Add profile editing, form validation, save/cancel actions, loading states, and error handling.
+Implement avatar upload if supported by the existing backend.
+Ensure profile changes persist correctly after refreshing.
+Protect private information and prevent unauthorized profile edits.
+TASK 2: Redesign the Chat Interface
 
-Technical Deliverables & Checklist:
-Multi-tenant registration, secure passwordless/credential login, JWT session management and account recovery workflows.
-Role-based access control (RBAC) with granular permissions for Patients, Clinicians, Specialists, and Administrators.
-Profile management, consent preferences and GDPR/DPDP-compliant account deletion and data anonymization workflows.
-Secure session expiry, distributed Redis rate limiting and suspicious-login brute force detection.
-Protected routes and server-side authorization guards on every sensitive patient health operation.
-Privacy settings, access history, doctor access grant/revocation history and consent withdrawal mechanics.
-Security testing suite covering authorization bypass, broken object-level authorization (BOLA) and negative access tests.
-Target Deliverable: A battle-tested, secure, and fully integrated identity, access-control, and patient privacy system.
+Audit all existing chat components and identify UI and functionality issues.
+Create a clean, premium desktop chat layout with an intuitive conversation list and message area.
+Make the interface fully responsive across mobile, tablet, and desktop.
+Improve message bubbles, timestamps, avatars, spacing, typography, and conversation headers.
+Improve the message composer, attachment controls, and send button.
+Add appropriate loading skeletons, empty states, and error messages.
+Ensure long messages, emojis, and different screen sizes render correctly.
+TASK 3: Fix Mobile Chat Problems
 
-Repository & Feature Branch Details:
-Official GitHub Repository: https://github.com/mohitraj8503/HerCare-Plus
-Your Designated Feature Branch: feat/ruchika-hercare-auth-privacy
-Permanent Intern ID: TTI000195
-Official Reference No.: TT-INT-2026-0195
-Strict Submission Deadline: October 25, 2026 at 23:59 IST
-Rules for every assigned developer
-In tasks ko GitHub Issues ya project-management board par assign karte waqt ye acceptance requirements mandatory rakho:
+Fix the keyboard covering the message input.
+Eliminate unwanted layout shifts and horizontal scrolling.
+Fix message auto-scroll without interrupting users reading older messages.
+Ensure the composer remains usable on small screens.
+Improve touch targets, navigation, and mobile conversation switching.
+━━━━━━━━━━━━━━━━━━ 📅 DAY 2 — BUG FIXES, AI & TESTING ━━━━━━━━━━━━━━━━━━ TASK 4: Chat Functionality Audit
 
-Full ownership: Module ke UI, APIs, data model, validation, tests aur documentation ki responsibility assigned developer ki hogi.
-Substantial scope: Sirf UI mockups, dummy data ya basic CRUD implementation ko task completion nahi maana jayega.
-Meaningful code only: 10,000+ lines ko planning estimate samjho, compulsory metric nahi. Generated files, duplicated code, boilerplate aur meaningless comments count nahi honge.
-Integration: Har developer documented interfaces use karega aur main branch mein merge hone se pehle code review aur automated checks pass karega.
-Security: Sensitive health data ke liye explicit access control, privacy safeguards aur negative authorization tests required honge.
-Proof of completion: Working feature, test results, screenshots/demo, API documentation aur known limitations submit karne honge.
-This task is now live on your Intern Dashboard. Please clone the repository, switch to branch feat/ruchika-hercare-auth-privacy, and begin implementation immediately.
+Verify message sending, receiving, ordering, and duplicate prevention.
+Fix broken send actions and incorrect message states.
+Implement clear sending, sent, failed, and retry states where supported.
+Test real-time updates and connection recovery.
+Audit conversation switching, message history, and search.
+Test attachment previews, upload progress, and upload errors if attachments are supported.
+Fix all reproducible chat bugs discovered during the audit.
+TASK 5: AI Tools Integration
+
+Inspect the existing AI implementation and identify incomplete functionality.
+Verify AI response handling, loading indicators, and error recovery.
+Fix integration issues without exposing API keys in frontend code.
+Prevent duplicate AI requests and incorrect conversation associations.
+Verify that private user conversations and AI context remain isolated.
+Document any feature blocked by missing backend support or credentials.
+TASK 6: Overall UI/UX Improvements
+
+Maintain consistent colors, typography, spacing, buttons, and component styles.
+Improve accessibility, keyboard navigation, and visible focus states.
+Add proper loading, success, empty, and failure states.
+Optimize unnecessarily repeated renders and large conversation lists where needed.
+Remove broken links, dead buttons, and placeholder functionality identified during the audit.
+TASK 7: Testing & Final Delivery
+
+Run available lint, type-check, build, and automated tests.
+Test profile editing and chat flows on desktop and mobile.
+Check authentication, authorization, and privacy-sensitive operations.
+Fix regressions caused by your changes.
+Capture screenshots of the completed profile page and chat UI.
+Submit all changes through a dedicated Git branch and pull request.
+Provide a list of completed tasks, remaining bugs, blockers, and files changed.
+━━━━━━━━━━━━━━━━━━ 📋 MANDATORY DELIVERABLES ━━━━━━━━━━━━━━━━━━
+
+Fully functional profile page.
+Improved desktop and mobile chat UI.
+Verified fixes for existing chat bugs.
+AI integration audit and supported fixes.
+Build/test results and screenshots.
+Updated technical documentation where necessary.
+A detailed report of unfinished work discovered in the repository, with priorities and reproduction steps.
+IMPORTANT INSTRUCTIONS
+
+First inspect the repository, README, existing architecture, and pending work.
+Do not replace working features with mock data.
+Do not introduce unnecessary dependencies or rewrite the entire application without approval.
+Preserve existing functionality and user data.
+Do not mark untested features as completed.
+If any task cannot be completed within two days, report the blocker honestly and provide the remaining implementation plan. 🎯 Priority: Functionality → Responsiveness → Reliability → Visual Polish. The objective is not merely to make the application look attractive. The profile and chat features must work correctly, remain responsive, and be ready for a proper review. Please begin with the repository audit and share your initial findings before making major changes. Best of luck, Aravind! Build it with quality, attention to detail, and ownership. — Team TechTomorrow

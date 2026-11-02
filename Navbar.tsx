@@ -11,7 +11,6 @@ export default function Navbar() {
 
   const menuItems = [
     { icon: "🏠", label: "Home", href: "/" },
-    { icon: "🩺", label: "AI Health Assistant", href: "/assistant" },
     { icon: "💖", label: "About HerCare⁺", href: "/about" },
     { icon: "👤", label: "My Profile", href: "/profile" },
     { icon: "🔐", label: "Privacy & Safety", href: "/privacy-safety" },
@@ -19,7 +18,7 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-40 px-6 py-4 bg-white/95 backdrop-blur-md border-b border-pink-50 max-w-[480px] mx-auto shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+      <nav className="fixed left-0 right-0 top-0 z-40 bg-white/95 px-6 py-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)] backdrop-blur-md md:inset-y-0 md:right-auto md:w-64 md:border-r md:border-pink-50 md:px-5 md:py-7">
         <div className="flex justify-between items-center">
            {/* Premium Logo */}
            <Logo />
@@ -30,6 +29,10 @@ export default function Navbar() {
            >
              <Menu size={22} />
            </button>
+        </div>
+        <div className="mt-8 hidden space-y-2 md:block">
+          {menuItems.map((item) => <Link key={item.href} href={item.href} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-gray-600 hover:bg-pink-50 hover:text-pink-700"><span>{item.icon}</span>{item.label}</Link>)}
+          <Link href="/medical-records" className="flex items-center gap-3 rounded-xl bg-pink-50 px-3 py-3 text-sm font-semibold text-pink-700"><span>🩺</span>Medical history</Link>
         </div>
       </nav>
 

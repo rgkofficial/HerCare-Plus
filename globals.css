@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Premium Logic: Warmer, deeper, less "candy" pink */
+    --background: #FFF5F7; /* Extremely subtle warm pink-white */
+    --foreground: #4A4A4A; /* Softer than pure black */
+
+    --primary: #FF8FAB; /* Vibrant but soft pink */
+    --primary-foreground: #FFFFFF;
+    
+    --secondary: #A78BFA; /* Soft Violet */
+    --secondary-foreground: #FFFFFF;
+
+    --positive: #86EFAC; /* Calm Green */
+    --alert: #FDA4AF; /* Soft Red */
+    
+    --muted: #F8FAFC;
+    --muted-text: #94A3B8;
+    
+    --card-bg: #FFFFFF;
+    --card-shadow: 0 8px 32px -4px rgba(255, 143, 171, 0.15); /* Pinkish glow shadow */
+    
+    --radius: 28px; /* More rounded = friendlier */
+    --spacing-base: 1rem;
+  }
+
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    -webkit-tap-highlight-color: transparent; /* Mobile: No blue tap box */
+    touch-action: manipulation; /* ⚡️ CORE FIX: Removes 300ms tap delay on mobile */
+  }
+
+  /* ⚡️ ULTRA SNAPPY MODE: Instant visual feedback for ALL interactables */
+  button:active, a:active, [role="button"]:active {
+    transform: scale(0.96);
+    transition: transform 0.05s ease-out !important;
+    filter: brightness(0.95);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #F8F9FA; /* Desktop background */
+    color: var(--foreground);
+    @apply font-nunito;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* Premium Selection */
+  ::selection {
+    background-color: rgba(255, 143, 171, 0.3);
+    color: var(--foreground);
+  }
+}
+
+@layer components {
+  /* Components */
+  .card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    padding: 1.5rem;
+    transition: transform 0.2s ease;
+  }
+
+  .btn-primary {
+    background-color: var(--primary);
+    color: #5a3e45;
+    border: none;
+    border-radius: var(--radius);
+    padding: 1rem 2rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: transform 0.1s ease, background-color 0.2s;
+  }
+
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .btn-icon {
+    background: white;
+    border: none;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    cursor: pointer;
+    color: var(--secondary);
+  }
+
+  .input-field {
+    width: 100%;
+    padding: 1rem;
+    border-radius: var(--radius);
+    border: 1px solid rgba(0,0,0,0.05);
+    background: white;
+    font-family: inherit;
+    font-size: 1rem;
+    outline: none;
+  }
+  .input-field:focus {
+    border-color: var(--secondary);
+  }
+
+  .page-container {
+    width: 100%;
+    margin: 0;
+    min-height: 100vh;
+    background: var(--background);
+    position: relative;
+    overflow-x: hidden;
+  }
+  @media (min-width: 768px) {
+    .page-container {
+      margin-left: 16rem;
+      width: calc(100% - 16rem);
+    }
+  }
+}
+
+@layer utilities {
+  /* Animations */
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .5; }
+  }
+
+  /* Hide Scrollbar */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}

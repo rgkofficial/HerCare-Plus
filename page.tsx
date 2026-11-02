@@ -1,677 +1,908 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
+import {
+  Activity,
+  Droplets,
+  Moon,
+  Heart,
+  Utensils,
+} from "lucide-react";
 
-type MedicalRecord = {
+import MoodStressJournal from "@/components/wellness/MoodStressJournal";
+import HabitTracker from "@/components/wellness/HabitTracker";
+import WellnessPreferences from "@/components/wellness/WellnessPreferences";
+
+import { generateWellnessRecommendations } from "@/lib/wellness/wellnessRecommendations";
+import { storage } from "@/lib/storage";
+
+type WellnessCategory =
+  | "hydration"
+  | "nutrition"
+  | "activity"
+  | "sleep"
+  | "mood";
+
+interface WellnessMetric {
+  category: WellnessCategory;
+  label: string;
+  value: number;
+  goal: number;
+  unit: string;
+}
+
+interface WellnessEntry {
   id: string;
-  file_name: string;
-  category: string;
-  content_type: string;
-  file_size: number;
+  category: WellnessCategory;
+  date: string;
+  value: number;
+  unit: string;
   created_at: string;
-  version_number?: number;
-  previous_version_id?: string | null;
-};
+}
 
-const categories = [
-  { value: "prescription", label: "Prescription" },
-  { value: "lab_report", label: "Lab Report" },
-  { value: "medical_report", label: "Medical Report" },
-  { value: "other", label: "Other" },
+const initialMetrics: WellnessMetric[] = [
+  {
+    category: "hydration",
+    label: "Hydration",
+    value: 0,
+    goal: 2000,
+    unit: "ml",
+  },
+  {
+    category: "nutrition",
+    label: "Meals",
+    value: 0,
+    goal: 3,
+    unit: "meals",
+  },
+  {
+    category: "activity",
+    label: "Activity",
+    value: 0,
+    goal: 30,
+    unit: "minutes",
+  },
+  {
+    category: "sleep",
+    label: "Sleep",
+    value: 0,
+    goal: 8,
+    unit: "hours",
+  },
+  {
+    category: "mood",
+    label: "Mood",
+    value: 0,
+    goal: 5,
+    unit: "score",
+  },
 ];
 
-export default function MedicalRecordsPage() {
-  const [records, setRecords] = useState<MedicalRecord[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [category, setCategory] = useState("other");
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterCategory, setFilterCategory] = useState("all");
-  const [versionTarget, setVersionTarget] =
-  useState<MedicalRecord | null>(null);
-  const [versionFile, setVersionFile] = useState<File | null>(null);
-  const [versionUploading, setVersionUploading] = useState(false);
-  const [historyTarget, setHistoryTarget] =
-  useState<MedicalRecord | null>(null);
-  const [history, setHistory] = useState<MedicalRecord[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
+const icons = {
+  hydration: Droplets,
+  nutrition: Utensils,
+  activity: Activity,
+  sleep: Moon,
+  mood: Heart,
+};
 
-  async function loadRecords() {
-    setLoading(true);
-    setError("");
+const categories: WellnessCategory[] = [
+  "hydration",
+  "nutrition",
+  "activity",
+  "sleep",
+  "mood",
+];
 
-    try {
-      const response = await fetch("/api/medical-records", {
-        cache: "no-store",
-      });
-      const result = await response.json();
+function isWellnessCategory(
+  value: unknown
+): value is WellnessCategory {
+  return categories.some((category) => category === value);
+}
 
-      if (!response.ok) {
-        throw new Error(result.error || "Could not load documents.");
+/**
+ * Returns the date in the user's local timezone.
+ *
+ * Avoid using toISOString().slice(0, 10) here because
+ * UTC can produce the wrong date near midnight.
+ */
+function getLocalDate(): string {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts saved entries into today's dashboard totals.
+ *
+ * Hydration, meals, and activity are accumulated.
+ * Sleep and mood use the most recently saved entry.
+ */
+function calculateDailyMetrics(
+  entries: WellnessEntry[],
+  date: string
+): {
+  values: Record<WellnessCategory, number>;
+  recorded: WellnessCategory[];
+} {
+  const values: Record<WellnessCategory, number> = {
+    hydration: 0,
+    nutrition: 0,
+    activity: 0,
+    sleep: 0,
+    mood: 0,
+  };
+
+  const recorded = new Set<WellnessCategory>();
+
+  const latest: Partial<
+    Record<WellnessCategory, string>
+  > = {};
+
+  for (const entry of entries) {
+    if (
+      entry.date !== date ||
+      !isWellnessCategory(entry.category)
+    ) {
+      continue;
+    }
+
+    const value = Number(entry.value);
+
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    recorded.add(entry.category);
+
+    if (
+      entry.category === "sleep" ||
+      entry.category === "mood"
+    ) {
+      const timestamp = entry.created_at ?? "";
+
+      if (
+        latest[entry.category] === undefined ||
+        timestamp >= latest[entry.category]!
+      ) {
+        values[entry.category] = value;
+        latest[entry.category] = timestamp;
       }
-
-      setRecords(result.records || []);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not load documents."
-      );
-    } finally {
-      setLoading(false);
+    } else {
+      values[entry.category] += value;
     }
   }
 
+  return {
+    values,
+    recorded: Array.from(recorded),
+  };
+}
+
+export default function WellnessPage() {
+  const [metrics, setMetrics] =
+    useState<WellnessMetric[]>(initialMetrics);
+
+  const [selectedCategory, setSelectedCategory] =
+    useState<WellnessCategory>("hydration");
+
+  const [inputValue, setInputValue] = useState("");
+
+  const [selectedGoals, setSelectedGoals] = useState<
+    WellnessCategory[]
+  >(["hydration", "nutrition", "activity", "sleep", "mood"]);
+
+  const [recordedCategories, setRecordedCategories] = useState<
+    WellnessCategory[]
+  >([]);
+
+  const [journalStress, setJournalStress] = useState<
+    number | null
+  >(null);
+
+  const [entries, setEntries] = useState<WellnessEntry[]>([]);
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [apiMessage, setApiMessage] = useState("");
+  const [isAuthenticated, setIsAuthenticated] =
+    useState(false);
+  const [cycleEntriesCount, setCycleEntriesCount] = useState<number | null>(null);
+
+  const selectedMetric = metrics.find(
+    (metric) => metric.category === selectedCategory
+  );
+
+  /**
+   * Load saved entries from the authenticated API.
+   */
   useEffect(() => {
-    void loadRecords();
+    let cancelled = false;
+
+    async function loadEntries() {
+      setIsLoading(true);
+      setApiMessage("");
+
+      try {
+        const response = await fetch("/api/wellness", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (cancelled) return;
+
+        if (response.status === 401) {
+          setIsAuthenticated(false);
+          setApiMessage(
+            "Please sign in to load and save wellness entries."
+          );
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            "Unable to load saved wellness entries."
+          );
+        }
+
+        const result: {
+          entries?: WellnessEntry[];
+          goals?: Array<{ category: WellnessCategory; target: number }>;
+          preferences?: { cycle_integration_consent?: boolean };
+        } = await response.json();
+
+        if (cancelled) return;
+
+        const savedEntries = Array.isArray(result.entries)
+          ? result.entries
+          : [];
+
+        if (Array.isArray(result.goals) && result.goals.length > 0) {
+          setSelectedGoals(result.goals.map((goal) => goal.category));
+          setMetrics((previous) => previous.map((metric) => {
+            const goal = result.goals?.find((item) => item.category === metric.category);
+            return goal ? { ...metric, goal: Number(goal.target) } : metric;
+          }));
+        }
+
+        if (result.preferences?.cycle_integration_consent) {
+          const cycleEntries = await storage.getCycleEntries();
+          setCycleEntriesCount(cycleEntries.length);
+        } else {
+          setCycleEntriesCount(null);
+        }
+
+        const today = getLocalDate();
+
+        const daily = calculateDailyMetrics(
+          savedEntries,
+          today
+        );
+
+        setEntries(savedEntries);
+
+        setMetrics((previous) =>
+          previous.map((metric) => ({
+            ...metric,
+            value: daily.values[metric.category],
+          }))
+        );
+
+        setRecordedCategories(daily.recorded);
+        setIsAuthenticated(true);
+      } catch {
+        if (!cancelled) {
+          setApiMessage(
+            "Unable to load saved wellness entries. Please try refreshing the page."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadEntries();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  async function uploadDocument(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage("");
-    setError("");
+  function toggleGoal(category: WellnessCategory) {
+    setSelectedGoals((previous) => {
+      const next = previous.includes(category)
+        ? previous.filter((item) => item !== category)
+        : [...previous, category];
+      if (next.includes(category)) {
+        const metric = metrics.find((item) => item.category === category);
+        if (metric) void fetch("/api/wellness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "goal", category, target: metric.goal, unit: metric.unit }) });
+      }
+      return next;
+    });
+  }
 
-    if (!file) {
-      setError("Please select a document first.");
+  function updateGoal(
+    category: WellnessCategory,
+    newGoal: number
+  ) {
+    if (
+      !Number.isFinite(newGoal) ||
+      newGoal <= 0
+    ) {
       return;
     }
 
-    setUploading(true);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("category", category);
-
-      const response = await fetch("/api/medical-records", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Upload failed.");
-      }
-
-      setFile(null);
-      if (formRef.current) {
-       formRef.current.reset();
-      }
-      setCategory("other");
-      setMessage("Document uploaded successfully.");
-      await loadRecords();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function downloadDocument(record: MedicalRecord) {
-    setBusyId(record.id);
-    setError("");
-    setMessage("");
-
-    try {
-      const response = await fetch(
-        `/api/medical-records/download?id=${encodeURIComponent(record.id)}`
-      );
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Download failed.");
-      }
-
-      const link = document.createElement("a");
-      link.href = result.downloadUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.download = record.file_name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed.");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function previewDocument(record: MedicalRecord) {
-  setBusyId(record.id);
-  setError("");
-  setMessage("");
-
-  // Open a tab immediately to reduce popup-blocker issues.
-  const previewWindow = window.open("about:blank", "_blank");
-
-  if (!previewWindow) {
-    setError("Please allow pop-ups to preview this document.");
-    setBusyId(null);
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `/api/medical-records/download?id=${encodeURIComponent(record.id)}`
+    setMetrics((previous) =>
+      previous.map((metric) =>
+        metric.category === category
+          ? { ...metric, goal: newGoal }
+          : metric
+      )
     );
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || "Preview failed.");
-    }
-
-    previewWindow.opener = null;
-    previewWindow.location.href = result.downloadUrl;
-  } catch (err) {
-    previewWindow.close();
-    setError(err instanceof Error ? err.message : "Preview failed.");
-  } finally {
-    setBusyId(null);
+    const metric = metrics.find((item) => item.category === category);
+    if (metric) void fetch("/api/wellness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "goal", category, target: newGoal, unit: metric.unit }) });
   }
-}
 
-  async function deleteDocument(record: MedicalRecord) {
-    const confirmed = window.confirm(
-      `Delete "${record.file_name}" permanently?`
+  function getMetricValue(
+    category: WellnessCategory
+  ): number {
+    return (
+      metrics.find(
+        (metric) => metric.category === category
+      )?.value ?? 0
     );
-
-    if (!confirmed) return;
-
-    setBusyId(record.id);
-    setError("");
-    setMessage("");
-
-    try {
-      const response = await fetch("/api/medical-records/delete", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: record.id }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Delete failed.");
-      }
-
-      setRecords((current) =>
-        current.filter((item) => item.id !== record.id)
-      );
-      setMessage("Document deleted.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed.");
-    } finally {
-      setBusyId(null);
-    }
   }
 
-   async function uploadNewVersion(
-  event: React.FormEvent<HTMLFormElement>
-) {
-  event.preventDefault();
-
-  if (!versionTarget || !versionFile) {
-    setError("Select a document before uploading a new version.");
-    return;
+  function recordedValue(
+    category: WellnessCategory
+  ): number | null {
+    return recordedCategories.includes(category)
+      ? getMetricValue(category)
+      : null;
   }
 
-  if (versionFile.size > 10 * 1024 * 1024) {
-    setError("The file must be 10 MB or smaller.");
-    return;
-  }
-
-  setVersionUploading(true);
-  setError("");
-  setMessage("");
-
-  try {
-    const formData = new FormData();
-    formData.append("file", versionFile);
-    formData.append("id", versionTarget.id);
-    formData.append("category", versionTarget.category || "other");
-
-    const response = await fetch("/api/medical-records/versions", {
-      method: "POST",
-      body: formData,
+  const recommendations =
+    generateWellnessRecommendations({
+      goals: selectedGoals,
+      hydrationMl: recordedValue("hydration"),
+      activityMinutes: recordedValue("activity"),
+      sleepHours: recordedValue("sleep"),
+      moodScore: recordedValue("mood"),
+      stressScore: journalStress,
+      cycleEntriesCount,
     });
 
-    const result = await response.json();
+  /**
+   * Save a wellness entry to Supabase through the API.
+   */
+  async function addEntry() {
+    if (isSaving || isLoading) {
+      return;
+    }
 
-    if (!response.ok) {
-      throw new Error(
-        result.error || "Could not upload the new version."
+    setApiMessage("");
+
+    if (!isAuthenticated) {
+      setApiMessage(
+        "Please sign in before saving a wellness entry."
       );
+      return;
     }
 
-    setMessage("New document version uploaded successfully.");
-    setVersionTarget(null);
-    setVersionFile(null);
-    await loadRecords();
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Could not upload the new version."
-    );
-  } finally {
-    setVersionUploading(false);
-  }
-}
+    if (!selectedMetric) {
+      setApiMessage("Please select a valid category.");
+      return;
+    }
 
-async function viewVersionHistory(record: MedicalRecord) {
-  setHistoryTarget(record);
-  setHistory([]);
-  setHistoryLoading(true);
-  setError("");
-  setMessage("");
+    const value = Number(inputValue);
 
-  try {
-    const response = await fetch(
-      `/api/medical-records/versions?id=${encodeURIComponent(record.id)}`,
-      { cache: "no-store" }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        result.error || "Could not load version history."
+    if (
+      inputValue.trim() === "" ||
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      setApiMessage(
+        "Please enter a valid positive value."
       );
+      return;
     }
 
-    const versions = Array.isArray(result)
-      ? result
-      : result.versions ?? result.records;
-
-    if (!Array.isArray(versions)) {
-      throw new Error("Unexpected version-history response.");
+    if (
+      selectedCategory === "mood" &&
+      (!Number.isInteger(value) ||
+        value < 1 ||
+        value > 5)
+    ) {
+      setApiMessage(
+        "Mood must be a whole number between 1 and 5."
+      );
+      return;
     }
 
-    setHistory(versions);
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Could not load version history."
-    );
-  } finally {
-    setHistoryLoading(false);
+    if (
+      selectedCategory === "sleep" &&
+      value > 24
+    ) {
+      setApiMessage(
+        "Sleep must be between 0 and 24 hours."
+      );
+      return;
+    }
+
+    if (
+      selectedCategory === "nutrition" &&
+      !Number.isInteger(value)
+    ) {
+      setApiMessage(
+        "Please enter a whole number of meals."
+      );
+      return;
+    }
+
+    const entryDate = getLocalDate();
+
+    setIsSaving(true);
+
+    try {
+      const response = await fetch("/api/wellness", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "entry",
+          category: selectedCategory,
+          date: entryDate,
+          value,
+          unit: selectedMetric.unit,
+        }),
+      });
+
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        setApiMessage(
+          "Your session has expired. Please sign in again."
+        );
+        return;
+      }
+
+      const result: {
+        entry?: WellnessEntry;
+        error?: string;
+        details?: unknown;
+      } = await response.json();
+
+      if (!response.ok || !result.entry) {
+        if (response.status === 400) {
+          setApiMessage(
+            "The entry was rejected by validation. Please check the value and try again."
+          );
+        } else {
+          setApiMessage(
+            result.error ??
+              "Unable to save wellness entry."
+          );
+        }
+
+        return;
+      }
+
+      /**
+       * Update the dashboard only after the API
+       * confirms the entry was saved.
+       */
+      const updatedEntries = [
+        result.entry,
+        ...entries,
+      ];
+
+      const daily = calculateDailyMetrics(
+        updatedEntries,
+        getLocalDate()
+      );
+
+      setEntries(updatedEntries);
+
+      setMetrics((previous) =>
+        previous.map((metric) => ({
+          ...metric,
+          value: daily.values[metric.category],
+        }))
+      );
+
+      setRecordedCategories(daily.recorded);
+      setInputValue("");
+
+      setApiMessage(
+        "Wellness entry saved successfully!"
+      );
+    } catch {
+      setApiMessage(
+        "Unable to connect to the server. Please try again."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
-}
-
-  function formatSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }
-
-  const filteredRecords = records.filter((record) => {
-  const matchesSearch = record.file_name
-    .toLowerCase()
-    .includes(searchTerm.toLowerCase());
-
-  const matchesCategory =
-    filterCategory === "all" || record.category === filterCategory;
-
-  return matchesSearch && matchesCategory;
-});
 
   return (
-    <main
-      style={{
-        maxWidth: 900,
-        margin: "40px auto",
-        padding: 24,
-        fontFamily: "Arial, sans-serif",
-        color: "#243047",
-      }}
-    >
-      <header style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 32, marginBottom: 8 }}>Medical Records Vault</h1>
-        <p style={{ color: "#596579", lineHeight: 1.6 }}>
-          Store and manage your prescriptions, laboratory reports, and medical
-          documents in one place.
-        </p>
-      </header>
-
-      <section
-        style={{
-          border: "1px solid #dce3ec",
-          borderRadius: 12,
-          padding: 22,
-          marginBottom: 28,
-        }}
-      >
-        <h2 style={{ marginTop: 0 }}>Upload a document</h2>
-        <p style={{ color: "#596579", fontSize: 14 }}>
-          PDF, JPEG, or PNG · Maximum 10 MB
-        </p>
-
-       <form ref={formRef} onSubmit={uploadDocument}>
-          <label
-            htmlFor="medical-file"
-            style={{ display: "block", marginBottom: 8 }}
-          >
-            Choose file
-          </label>
-          <input
-            id="medical-file"
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-            onChange={(event) =>
-              setFile(event.target.files?.[0] || null)
-            }
-            required
-            style={{ display: "block", marginBottom: 18, maxWidth: "100%" }}
-          />
-
-          <label
-            htmlFor="medical-category"
-            style={{ display: "block", marginBottom: 8 }}
-          >
-            Document category
-          </label>
-          <select
-            id="medical-category"
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            style={{
-              padding: 10,
-              width: "100%",
-              maxWidth: 360,
-              marginBottom: 18,
-            }}
-          >
-            {categories.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <div>
-            <button type="submit" disabled={uploading} style={buttonStyle}>
-              {uploading ? "Uploading..." : "Upload document"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {message && (
-        <p role="status" style={{ color: "#167044" }}>
-          {message}
-        </p>
-      )}
-      {error && (
-        <p role="alert" style={{ color: "#b42318" }}>
-          {error}
-        </p>
-      )}
-
-      <section>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <h2>Your documents</h2>
-          <button
-            type="button"
-            onClick={() => void loadRecords()}
-            disabled={loading}
-            style={buttonStyle}
-          >
-            Refresh
-          </button>
-        </div>
-
-        <div
-  style={{
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    marginBottom: 18,
-  }}
->
-  <input
-    type="text"
-    value={searchTerm}
-    onChange={(event) => setSearchTerm(event.target.value)}
-    placeholder="Search by filename..."
-    aria-label="Search medical documents"
-    style={{
-      flex: "1 1 220px",
-      padding: 12,
-      border: "1px solid #dce3ec",
-      borderRadius: 8,
-    }}
-  />
-
-  <select
-    value={filterCategory}
-    onChange={(event) => setFilterCategory(event.target.value)}
-    aria-label="Filter by category"
-    style={{
-      flex: "0 1 200px",
-      padding: 12,
-      border: "1px solid #dce3ec",
-      borderRadius: 8,
-    }}
-  >
-    <option value="all">All categories</option>
-    {categories.map((item) => (
-      <option key={item.value} value={item.value}>
-        {item.label}
-      </option>
-    ))}
-  </select>
-</div>
-
-        {loading ? (
-          <p>Loading documents...</p>
-        ) : records.length === 0 ? (
-          <p style={{ color: "#596579" }}>
-            No documents yet. Upload a test document to get started.
+    <main className="min-h-screen bg-gradient-to-b from-pink-50 via-white to-purple-50 px-5 py-10 pb-32">
+      <div className="mx-auto max-w-5xl">
+        {/* Page header */}
+        <header className="mb-10">
+          <p className="text-sm font-semibold uppercase tracking-widest text-pink-600">
+            HerCare Plus
           </p>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {filteredRecords.map((record) => (
-              <article
-                key={record.id}
-                style={{
-                  border: "1px solid #dce3ec",
-                  borderRadius: 12,
-                  padding: 18,
-                }}
-              >
-                <h3 style={{ marginTop: 0, overflowWrap: "anywhere" }}>
-                  {record.file_name}
-                </h3>
-                <p style={{ color: "#596579", fontSize: 14 }}>
-                  {categories.find((item) => item.value === record.category)
-                    ?.label || "Other"}{" "}
-                  · {formatSize(Number(record.file_size))} ·{" "}
-                  {new Date(record.created_at).toLocaleDateString()}
-                </p>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-  <button
-    type="button"
-    onClick={() => void previewDocument(record)}
-    disabled={busyId === record.id}
-    style={buttonStyle}
-  >
-    {busyId === record.id ? "Please wait..." : "Preview"}
-  </button>
 
-  <button
-    type="button"
-    onClick={() => void downloadDocument(record)}
-    disabled={busyId === record.id}
-    style={buttonStyle}
-  >
-    {busyId === record.id ? "Please wait..." : "Download"}
-  </button>
+          <h1 className="mt-2 text-3xl font-bold text-gray-900">
+            My Wellness Dashboard
+          </h1>
 
-  <button
-    type="button"
-    onClick={() => void deleteDocument(record)}
-    disabled={busyId === record.id}
-    style={{
-      ...buttonStyle,
-      background: "#fff",
-      color: "#b42318",
-      border: "1px solid #d9a5a5",
-    }}
-  >
-    Delete
-  </button>
-   <button
-  type="button"
-  onClick={() => {
-    setVersionTarget(record);
-    setVersionFile(null);
-    setError("");
-    setMessage("");
-  }}
-  style={buttonStyle}
->
-  Upload New Version
-</button>
+          <p className="mt-3 text-gray-600">
+            Track your daily habits and understand your
+            wellness progress.
+          </p>
+        </header>
 
-<button
-  type="button"
-  onClick={() => void viewVersionHistory(record)}
-  style={buttonStyle}
->
-  View Version History
-</button>
-</div>
-
-   {versionTarget?.id === record.id && (
-  <form
-    onSubmit={uploadNewVersion}
-    style={{
-      marginTop: 16,
-      padding: 16,
-      background: "#f5f7fa",
-      borderRadius: 8,
-    }}
-  >
-    <h4>Upload a new version</h4>
-
-    <p style={{ fontSize: 14, color: "#596579" }}>
-      Choose the updated PDF, JPEG, or PNG file (maximum 10 MB).
-    </p>
-
-    <input
-      type="file"
-      accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-      required
-      onChange={(event) =>
-        setVersionFile(event.target.files?.[0] ?? null)
-      }
-      style={{ display: "block", marginBottom: 12 }}
-    />
-
-    <button type="submit" disabled={versionUploading} style={buttonStyle}>
-      {versionUploading ? "Uploading..." : "Save New Version"}
-    </button>
-
-    <button
-      type="button"
-      onClick={() => {
-        setVersionTarget(null);
-        setVersionFile(null);
-      }}
-      style={{ ...buttonStyle, marginLeft: 8 }}
-    >
-      Cancel
-    </button>
-  </form>
-)}
-
-{historyTarget?.id === record.id && (
-  <div
-    style={{
-      marginTop: 16,
-      padding: 16,
-      background: "#f5f7fa",
-      borderRadius: 8,
-    }}
-  >
-    <h4>Version History</h4>
-
-    {historyLoading ? (
-      <p>Loading version history...</p>
-    ) : history.length === 0 ? (
-      <p>No version history was returned.</p>
-    ) : (
-      <ol>
-        {history.map((version) => (
-          <li key={version.id} style={{ marginBottom: 10 }}>
-            <strong>
-              Version {version.version_number ?? 1}: {version.file_name}
-            </strong>
-            <br />
-            <span style={{ fontSize: 13, color: "#596579" }}>
-              {new Date(version.created_at).toLocaleString()} ·{" "}
-              {formatSize(Number(version.file_size))}
-            </span>
-            <br />
-            <button
-              type="button"
-              onClick={() => void downloadDocument(version)}
-              disabled={busyId === version.id}
-              style={{ ...buttonStyle, marginTop: 6 }}
-            >
-              Download this version
-            </button>
-          </li>
-        ))}
-      </ol>
-    )}
-
-    <button
-      type="button"
-      onClick={() => {
-        setHistoryTarget(null);
-        setHistory([]);
-      }}
-      style={buttonStyle}
-    >
-      Close History
-    </button>
-  </div>
-)}
-              </article>
-            ))}
+        {/* API status */}
+        {isLoading && (
+          <div
+            role="status"
+            className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800"
+          >
+            Loading your saved wellness entries...
           </div>
         )}
-      </section>
 
-      <p style={{ marginTop: 32, fontSize: 13, color: "#596579" }}>
-        Privacy controls: uploads are signature-validated, screened before
-        storage, isolated by account, and exposed through 60-second links.
-        OCR extraction is opt-in and requires human review before it can be
-        treated as structured health information.
-      </p>
+        {apiMessage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-6 rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900"
+          >
+            {apiMessage}
+          </div>
+        )}
+
+        {/* Wellness goals */}
+        <section className="mb-8 rounded-3xl border border-pink-100 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-gray-900">
+            My Wellness Goals
+          </h2>
+
+          <p className="mt-2 text-sm text-gray-500">
+            Select the wellness areas you want to focus on.
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            {metrics.map((metric) => {
+              const selected = selectedGoals.includes(
+                metric.category
+              );
+
+              return (
+                <button
+                  key={metric.category}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() =>
+                    toggleGoal(metric.category)
+                  }
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    selected
+                      ? "border-pink-600 bg-pink-600 text-white"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-pink-400"
+                  }`}
+                >
+                  {metric.label}
+                  {selected ? " ✓" : ""}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Editable targets */}
+          <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {metrics
+              .filter(
+                (metric) =>
+                  selectedGoals.includes(
+                    metric.category
+                  ) && metric.category !== "mood"
+              )
+              .map((metric) => (
+                <div
+                  key={metric.category}
+                  className="rounded-2xl border border-gray-200 p-4"
+                >
+                  <label
+                    htmlFor={`goal-${metric.category}`}
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    {metric.label} Target (
+                    {metric.unit})
+                  </label>
+
+                  <input
+                    id={`goal-${metric.category}`}
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    value={metric.goal}
+                    onChange={(event) =>
+                      updateGoal(
+                        metric.category,
+                        Number(event.target.value)
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-gray-300 p-3 text-gray-900"
+                  />
+                </div>
+              ))}
+          </div>
+        </section>
+
+        {/* Daily wellness overview */}
+        <section
+          aria-label="Daily wellness overview"
+          className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {metrics.map((metric) => {
+            const Icon = icons[metric.category];
+
+            const progress =
+              metric.category === "mood"
+                ? 0
+                : Math.min(
+                    (metric.value / metric.goal) * 100,
+                    100
+                  );
+
+            return (
+              <article
+                key={metric.category}
+                className="rounded-3xl border border-pink-100 bg-white p-6 shadow-sm"
+              >
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="rounded-2xl bg-pink-100 p-3 text-pink-600">
+                    <Icon size={24} />
+                  </div>
+
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {metric.label}
+                  </h2>
+                </div>
+
+                <p className="text-2xl font-bold text-gray-900">
+                  {metric.value}
+
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    {metric.unit}
+                  </span>
+                </p>
+
+                <p className="mt-2 text-sm text-gray-500">
+                  {metric.category === "mood"
+                    ? "Self-reported mood (1–5)"
+                    : `Personal goal: ${metric.goal} ${metric.unit}`}
+                </p>
+
+                {/* Mood is a score, not a progress goal */}
+                {metric.category !== "mood" && (
+                  <>
+                    <div
+                      className="mt-5 h-3 overflow-hidden rounded-full bg-gray-100"
+                      role="progressbar"
+                      aria-label={`${metric.label} progress`}
+                      aria-valuenow={progress}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className="h-full rounded-full bg-pink-500 transition-all"
+                        style={{
+                          width: `${progress}%`,
+                        }}
+                      />
+                    </div>
+
+                    <p className="mt-2 text-right text-sm text-gray-500">
+                      {Math.round(progress)}% complete
+                    </p>
+                  </>
+                )}
+              </article>
+            );
+          })}
+        </section>
+
+        {/* Add wellness entry */}
+        <section className="mt-10 rounded-3xl border border-purple-100 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-gray-900">
+            Add Wellness Entry
+          </h2>
+
+          <p className="mt-2 text-sm text-gray-500">
+            Record your daily wellness activities.
+            Entries are saved to your account.
+          </p>
+
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="wellness-category"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Category
+              </label>
+
+              <select
+                id="wellness-category"
+                value={selectedCategory}
+                disabled={isSaving}
+                onChange={(event) => {
+                  setSelectedCategory(
+                    event.target
+                      .value as WellnessCategory
+                  );
+
+                  setInputValue("");
+                  setApiMessage("");
+                }}
+                className="w-full rounded-xl border border-gray-300 p-3 text-gray-900 disabled:opacity-60"
+              >
+                {metrics.map((metric) => (
+                  <option
+                    key={metric.category}
+                    value={metric.category}
+                  >
+                    {metric.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="wellness-value"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Value ({selectedMetric?.unit})
+              </label>
+
+              <input
+                id="wellness-value"
+                type="number"
+                min={
+                  selectedCategory === "mood"
+                    ? "1"
+                    : "0.01"
+                }
+                max={
+                  selectedCategory === "mood"
+                    ? "5"
+                    : selectedCategory === "sleep"
+                      ? "24"
+                      : undefined
+                }
+                step={
+                  selectedCategory === "mood" ||
+                  selectedCategory === "nutrition"
+                    ? "1"
+                    : "any"
+                }
+                value={inputValue}
+                disabled={isSaving}
+                onChange={(event) =>
+                  setInputValue(event.target.value)
+                }
+                placeholder="Enter value"
+                className="w-full rounded-xl border border-gray-300 p-3 text-gray-900 disabled:opacity-60"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void addEntry()}
+            disabled={
+              isSaving ||
+              isLoading ||
+              !isAuthenticated
+            }
+            className="mt-6 rounded-xl bg-pink-600 px-6 py-3 font-semibold text-white transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving
+              ? "Saving..."
+              : "Save Wellness Entry"}
+          </button>
+
+          {!isLoading && !isAuthenticated && (
+            <p className="mt-3 text-sm text-gray-600">
+              Sign in to your HerCare Plus account
+              to save entries.
+            </p>
+          )}
+        </section>
+
+        {/* Journal */}
+        <section className="mt-10">
+          <MoodStressJournal
+            onStressChange={setJournalStress}
+          />
+        </section>
+
+        {/* Habit tracker */}
+        <section className="mt-10">
+          <HabitTracker />
+        </section>
+
+        {/* Personalized recommendations */}
+        <section
+          aria-labelledby="wellness-recommendations-title"
+          className="mt-10 rounded-3xl border border-pink-100 bg-white p-6 shadow-sm"
+        >
+          <h2
+            id="wellness-recommendations-title"
+            className="text-xl font-bold text-gray-900"
+          >
+            Personalized Wellness Recommendations
+          </h2>
+
+          <p className="mt-2 text-sm text-gray-500">
+            Educational suggestions based on your
+            selected goals and available wellness
+            entries. No entry does not mean poor
+            wellness.
+          </p>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {recommendations.map(
+              (recommendation) => (
+                <article
+                  key={recommendation.id}
+                  className="rounded-2xl border border-purple-100 bg-purple-50 p-5"
+                >
+                  <h3 className="font-semibold text-purple-900">
+                    {recommendation.title}
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-relaxed text-gray-700">
+                    {recommendation.description}
+                  </p>
+
+                  <span className="mt-3 inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-purple-700">
+                    General wellness information
+                  </span>
+                </article>
+              )
+            )}
+          </div>
+        </section>
+
+        <WellnessPreferences />
+        {/* Disclaimer */}
+        <aside className="mt-8 rounded-2xl bg-purple-100 p-5 text-sm text-purple-900">
+          <strong>Wellness information only:</strong>{" "}
+          This dashboard is intended for general
+          wellness tracking and does not provide
+          medical diagnosis or treatment advice.
+        </aside>
+
+        <p className="mt-4 text-sm text-gray-500">
+          Wellness entries, journal entries, habits, and editable goal
+          preferences are saved through the authenticated API when you are signed in.
+          Default goals are demonstration values,
+          not personalized medical targets.
+        </p>
+      </div>
     </main>
   );
 }
-
-const buttonStyle: React.CSSProperties = {
-  background: "#176b59",
-  color: "#fff",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 16px",
-  cursor: "pointer",
-};
