@@ -1,7 +1,12 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-type MedicalRecordAuditAction = "upload" | "download" | "delete" | "export";
+type MedicalRecordAuditAction =
+  | "upload"
+  | "download"
+  | "delete"
+  | "share"
+  | "share_access";
 
 export async function logMedicalRecordAction(
   actorId: string,
